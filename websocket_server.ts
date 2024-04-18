@@ -1,16 +1,26 @@
-import WebSocket from 'ws';
+// Start a WebSocket server
 
-const wss = new WebSocket.Server({ port: 8080 });
+import { WebSocketServer } from "ws";
 
-wss.on('connection', (ws: WebSocket) => {
-console.log('Client connected');
+const port = 3000;
+const wss = new WebSocketServer({port});
 
-ws.on('message', (message: string) => {
-console.log(`Received message: ${message}`);
-ws.send(`You sent: ${message}`);
+wss.on('connection', (ws) => {
+    console.log('Client connected');
+
+    ws.on('message', (message) => {
+        console.log(`Received message from client: ${message}`);
+
+        if (message.toString() !== 'Connected to WebSocket server') {
+            ws.send(`You sent: ${message}`);
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('Client disconnected');
+    });
+
+    ws.send(`Hello, this is the Server!`);
 });
 
-ws.on('close', () => {
-console.log('Client disconnected');
-});
-});
+console.log(`Listening at ${port}...`);
