@@ -22,7 +22,7 @@ ws.on('open', () => {
 ws.on('message', (data: WebSocket.Data) => {
     if (data.toString() === "input") {
         
-        readline.question('Another message?: ', (message: string) => {
+        readline.question('Enter a message: ', (message: string) => {
             ws.send(message);
             // readline.close();
         })
@@ -30,7 +30,7 @@ ws.on('message', (data: WebSocket.Data) => {
     } 
     else if (data.toString() === "anotherInput") {
 
-        readline.question('Enter a message: ', (message: string) => {
+        readline.question('Another message?: ', (message: string) => {
             ws.send(message);
             // readline.close();
         })
