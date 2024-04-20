@@ -77,7 +77,8 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         console.log('Client disconnected');
     });
-    
+
+    // Reply to the connection of the client and ask for first input
     ws.send(`Hello, this is the Server!`);
     ws.send(`input`);
 
