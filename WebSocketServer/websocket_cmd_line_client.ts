@@ -1,8 +1,6 @@
 // Starts a WebSocket client and connects to a server
 
 import WebSocket from "ws";
-import { setTimeout } from "timers/promises";
-import { randomBytes } from "crypto";
 
 const port = 3000;
 const ws = new WebSocket(`ws://localhost:${port}`);
