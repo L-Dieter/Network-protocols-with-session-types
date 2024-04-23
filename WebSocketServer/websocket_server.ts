@@ -28,7 +28,7 @@ const parseMessage = (message: string): Session => {
     return { kind: "end" };
 }
 
-// check the continue value of a Session and keep goin with this step
+// check the continue value of a Session and keep going with this step
 const nextStep = (ses: Session): string => {
     if (ses.kind !== "end") {
         if (ses.cont === "end") {
