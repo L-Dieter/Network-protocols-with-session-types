@@ -28,6 +28,17 @@ const parseMessage = (message: string): Session => {
     return { kind: "end" };
 }
 
+// check the continue value of a Session and keep goin with this step
+const nextStep = (ses: Session): string => {
+    if (ses.kind !== "end") {
+        if (ses.cont === "end") {
+            return "closeConnection";
+        }
+        else return "anotherInput";
+    }
+    return "closeConnection";
+}
+
 wss.on('connection', (ws) => {
     console.log('Client connected');
 
@@ -52,20 +63,21 @@ wss.on('connection', (ws) => {
             switch(msg.kind) {
                     case "add": {
                         ws.send(msg.result);
-                        ws.send("anotherInput");
+                        // ws.send("anotherInput");
                         break;
                     }
                     case "neg": {
                         ws.send(msg.negation);
-                        ws.send("anotherInput");
+                        // ws.send("anotherInput");
                         break;
                     }
                     case "end": {
-                        ws.send("closeConnection");
+                        // ws.send("closeConnection");
                         break;
                     }
                     
             }
+            ws.send(nextStep(msg));
         }
         else {
             ws.send(`You sent: ${message}`);
