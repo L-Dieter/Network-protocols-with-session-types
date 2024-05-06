@@ -21,7 +21,10 @@ ws.on('message', (data: WebSocket.Data) => {
     if (data.toString() === "input") {
         
         readline.question('Enter a message: ', (message: string) => {
-            ws.send(message);
+            const splitMsg: string[] = message.split(" ");
+            for (let msg of splitMsg) {
+                ws.send(msg);
+            }
             // readline.close();
         })
         
@@ -29,7 +32,10 @@ ws.on('message', (data: WebSocket.Data) => {
     else if (data.toString() === "anotherInput") {
 
         readline.question('Another message?: ', (message: string) => {
-            ws.send(message);
+            const splitMsg: string[] = message.split(" ");
+            for (let msg of splitMsg) {
+                ws.send(msg);
+            }
             // readline.close();
         })
         
