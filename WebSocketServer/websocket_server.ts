@@ -13,17 +13,13 @@ type Session =
         // terminate protocol
     | { kind: "end" }
 
-// parse the message and return a Session
-const parseMessage = (message: string): Session => {
-    const parsedMsg: string[] = message.toString().split(" ");
-    const kind = parsedMsg[0];
-    const arg1 = parsedMsg[1];
-    if (kind === "add") {
-        const arg2 = parsedMsg[2];
-        return { kind: "add", arg1: +arg1, arg2: +arg2, result: +arg1 + +arg2, cont: "end" };
+// get the Session which is indicated by the first input
+const getSession = (input: string[]): Session => {
+    if (input[0] === "add") {
+        return { kind: "add", arg1: +input[1], arg2: +input[2], result: +input[1] + +input[2], cont: "end" };
     } 
-    else if (kind === "neg") {
-        return { kind: "neg", value: +arg1, negation: -+arg1, cont: "end" };
+    else if (input[0] === "neg") {
+        return { kind: "neg", value: +input[1], negation: -+input[1], cont: "end" };
     }
     return { kind: "end" };
 }
@@ -41,33 +37,41 @@ const nextStep = (ses: Session): string => {
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
+    let inc_msg: string[] = [];
 
     ws.on('message', (message: string) => {
         console.log(`Received message from client: ${message}`);
         
-        // if (message.toString() !== 'Connected to WebSocket server') {
-        //     ws.send(`You sent: ${message}`);
-        // }
+        const msg: string = message.toString();
+        
+        let first_msg: string = "Connected";
+            
+        if (msg !== 'Connected to WebSocket server') {
+            inc_msg.push(msg);
+            first_msg = inc_msg[0];
+        }
 
-        const msg: string[] = message.toString().split(" ");
-        const firstMsg: string = msg[0].toString();
 
-        if (firstMsg === 'Connected') {
+        if (first_msg === 'Connected') {
             // do nothing
         }
-        else if ((firstMsg === 'add') || (firstMsg === 'neg') || (firstMsg === 'end')) {
+        else if ((first_msg === 'add') || (first_msg === 'neg') || (first_msg === 'end')) {
 
-            const msg: Session = parseMessage(message);
+            const ses: Session = getSession(inc_msg);
             
             // decide which kind of Session is used
-            switch(msg.kind) {
+            switch(ses.kind) {
                     case "add": {
-                        ws.send(msg.result);
+                        if (inc_msg.length === 3) {
+                            ws.send("Result: " + ses.result);
+                        }
                         // ws.send("anotherInput");
                         break;
                     }
                     case "neg": {
-                        ws.send(msg.negation);
+                        if (inc_msg.length === 2) {
+                            ws.send("Negation: " + ses.negation);
+                        }
                         // ws.send("anotherInput");
                         break;
                     }
@@ -77,7 +81,7 @@ wss.on('connection', (ws) => {
                     }
                     
             }
-            ws.send(nextStep(msg));
+            ws.send(nextStep(ses));
         }
         else {
             ws.send(`You sent: ${message}`);
