@@ -13,6 +13,7 @@ type Session =
         // terminate protocol
     | { kind: "end" }
 
+
 // get the Session which is indicated by the first input
 const getSession = (input: string[]): Session => {
     if (input[0] === "add") {
@@ -24,33 +25,43 @@ const getSession = (input: string[]): Session => {
     return { kind: "end" };
 }
 
-// check the continue value of a Session and keep going with this step
+
+// check the continue value of a Session and keep goin with this step
 const nextStep = (ses: Session): string => {
     if (ses.kind !== "end") {
+        // return ses.cont;
         if (ses.cont === "end") {
             return "closeConnection";
         }
         else return "anotherInput";
     }
+    // return "end";
     return "closeConnection";
 }
 
+
 wss.on('connection', (ws) => {
     console.log('Client connected');
+    
     let inc_msg: string[] = [];
 
     ws.on('message', (message: string) => {
+
+        
         console.log(`Received message from client: ${message}`);
         
         const msg: string = message.toString();
         
         let first_msg: string = "Connected";
-            
+
+        let invalid_input: string = "";
+        
+        // push the message to the stack if it is an operation
         if (msg !== 'Connected to WebSocket server') {
             inc_msg.push(msg);
             first_msg = inc_msg[0];
+            console.log(inc_msg);
         }
-
 
         if (first_msg === 'Connected') {
             // do nothing
@@ -64,28 +75,37 @@ wss.on('connection', (ws) => {
                     case "add": {
                         if (inc_msg.length === 3) {
                             ws.send("Result: " + ses.result);
+                            inc_msg = [];
                         }
-                        // ws.send("anotherInput");
                         break;
                     }
                     case "neg": {
                         if (inc_msg.length === 2) {
                             ws.send("Negation: " + ses.negation);
+                            inc_msg = [];
                         }
-                        // ws.send("anotherInput");
                         break;
                     }
                     case "end": {
-                        // ws.send("closeConnection");
+                        inc_msg = [];
                         break;
                     }
                     
             }
             ws.send(nextStep(ses));
         }
-        else {
-            ws.send(`You sent: ${message}`);
-            ws.send("anotherInput");
+        else if (first_msg === "invalidInput") {
+            for (let i = 1; i < inc_msg.length-1; i++) {
+                invalid_input += " " + inc_msg[i];
+            }
+        }
+        if (inc_msg[inc_msg.length-1] === "error") {
+            ws.send(`# Invalid input: ${invalid_input}`);
+            ws.send(`# Allowed operation(s):`);
+            ws.send(`#    .. <serverurl> add <number> <number>`);
+            ws.send(`#    .. <serverurl> neg <number>`);
+            inc_msg = [];
+            ws.send(`closeConnection`);
         }
             
     });
@@ -93,10 +113,9 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         console.log('Client disconnected');
     });
-
-    // Reply to the connection of the client and ask for first input
+    
+    // Reply to the connection of the client
     ws.send(`Hello, this is the Server!`);
-    ws.send(`input`);
 
 });
 
