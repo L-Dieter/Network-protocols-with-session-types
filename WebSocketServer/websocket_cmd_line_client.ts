@@ -2,54 +2,56 @@
 
 import WebSocket from "ws";
 
-const port = 3000;
-const ws = new WebSocket(`ws://localhost:${port}`);
+let server_url: string = process.argv[2];
+let func: string = process.argv[3];
+let arg1: number = Number(process.argv[4]);
+let arg2: number;
+if (func === "add") {
+    arg2 = Number(process.argv[5]);
+}
 
-// Set up a readline interface for command input
-const readline = require('readline').createInterface({
-    input: process.stdin,
-    output: process.stdout
-})
+const ws = new WebSocket(`${server_url}`);
+
 
 ws.on('open', () => {
     console.log('[Client] Connected.');
     ws.send('Connected to WebSocket server');
+    if (func === "neg" && !isNaN(arg1) && process.argv[5] === undefined) {
+        ws.send(func);
+        ws.send(arg1);
+    }
+    else if (func === "add" && !isNaN(arg1) && !isNaN(arg2)
+        && process.argv[6] === undefined) {
+        ws.send(func);
+        ws.send(arg1);
+        ws.send(arg2);
+    }
+    else {
+        ws.send("invalidInput");
+        for (let i = 3; i < process.argv.length; i++) {
+            ws.send(process.argv[i]);
+        }
+        ws.send("error");
+    }
     
 });
 
 ws.on('message', (data: WebSocket.Data) => {
-    if (data.toString() === "input") {
-        
-        readline.question('Enter a message: ', (message: string) => {
-            const splitMsg: string[] = message.split(" ");
-            for (let msg of splitMsg) {
-                ws.send(msg);
-            }
-            // readline.close();
-        })
-        
-    } 
-    else if (data.toString() === "anotherInput") {
-
-        readline.question('Another message?: ', (message: string) => {
-            const splitMsg: string[] = message.split(" ");
-            for (let msg of splitMsg) {
-                ws.send(msg);
-            }
-            // readline.close();
-        })
-        
-    }
-    else if (data.toString() === "closeConnection") {
-        readline.close();
+    if (data.toString() === "closeConnection") {
         ws.close();
     }
-    else { 
-        console.log(`Received a message from the server:\n ${data}`);
+    else {
+        const prs_data: string[] = data.toString().split(" ");
+        const first_symbol: string = prs_data[0];
+        if (first_symbol === "#") {
+            console.log(`${data}`);
+        }
+        else {
+            console.log(`Received a message from the server:\n ${data}`);
+        }
     }
 });
 
 ws.on('close', () => {
-    readline.close();
     console.log('Disconnected from WebSocket server');
 });
