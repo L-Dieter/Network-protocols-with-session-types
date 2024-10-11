@@ -43,7 +43,7 @@ ws.on('message', (data: WebSocket.Data) => {
     else {
         const prs_data: string[] = data.toString().split(" ");
         const first_symbol: string = prs_data[0];
-        if (first_symbol === "#") {
+        if (first_symbol === "#" || first_symbol === "Hello,") {
             console.log(`${data}`);
         }
         else {
