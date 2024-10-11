@@ -95,8 +95,16 @@ wss.on('connection', (ws) => {
             ws.send(nextStep(ses));
         }
         else if (first_msg === "invalidInput") {
-            for (let i = 1; i < inc_msg.length-1; i++) {
+            if (inc_msg.length > 5) {
+                for (let i = 1; i < 5; i++) {
+                    invalid_input += " " + inc_msg[i];
+                }
+                invalid_input += " " + `... [${inc_msg.length-6} more]`;
+            }
+            else {
+                for (let i = 1; i < inc_msg.length-1; i++) {
                 invalid_input += " " + inc_msg[i];
+                }
             }
         }
         if (inc_msg[inc_msg.length-1] === "error") {
