@@ -39,6 +39,45 @@ const nextStep = (ses: Session): string => {
     return "closeConnection";
 }
 
+// decide which kind of Session is used
+const chooseSession = (ses: Session, msg: string[]): string => {
+    switch(ses.kind) {
+        case "add": {
+            if (msg.length === 3) {
+                return ("Result: " + ses.result);
+            }
+            break;
+        }
+        case "neg": {
+            if (msg.length === 2) {
+                return ("Negation: " + ses.negation);
+            }
+            break;
+        }
+        case "end": {
+            break;
+        }
+    }
+    return nextStep(ses);
+}
+
+// check the input and generate a message for an invalid input which will be returned to the client
+const checkMessage = (msg: string[]): string => {
+    let return_message: string = "";
+    if (msg.length > 5) {
+        for (let i = 1; i < 5; i++) {
+            return_message += " " + msg[i];
+        }
+        return_message += " " + `... [${msg.length-6} more]`;
+    }
+    else {
+        for (let i = 1; i < msg.length-1; i++) {
+            return_message += " " + msg[i];
+        }
+    }
+    return return_message
+}
+
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -70,42 +109,10 @@ wss.on('connection', (ws) => {
 
             const ses: Session = getSession(inc_msg);
             
-            // decide which kind of Session is used
-            switch(ses.kind) {
-                    case "add": {
-                        if (inc_msg.length === 3) {
-                            ws.send("Result: " + ses.result);
-                            inc_msg = [];
-                        }
-                        break;
-                    }
-                    case "neg": {
-                        if (inc_msg.length === 2) {
-                            ws.send("Negation: " + ses.negation);
-                            inc_msg = [];
-                        }
-                        break;
-                    }
-                    case "end": {
-                        inc_msg = [];
-                        break;
-                    }
-                    
-            }
-            ws.send(nextStep(ses));
+            ws.send(chooseSession(ses, inc_msg));
         }
         else if (first_msg === "invalidInput") {
-            if (inc_msg.length > 5) {
-                for (let i = 1; i < 5; i++) {
-                    invalid_input += " " + inc_msg[i];
-                }
-                invalid_input += " " + `... [${inc_msg.length-6} more]`;
-            }
-            else {
-                for (let i = 1; i < inc_msg.length-1; i++) {
-                invalid_input += " " + inc_msg[i];
-                }
-            }
+            invalid_input = checkMessage(inc_msg);
         }
         if (inc_msg[inc_msg.length-1] === "error") {
             ws.send(`# Invalid input: ${invalid_input}`);
