@@ -5,11 +5,20 @@ import { WebSocketServer } from "ws";
 const port = 3000;
 const wss = new WebSocketServer({port});
 
+type Add = {
+    arg1: number
+    arg2: number
+}
+
 type Session = 
         // add two numbers and terminate
     | { kind: "add", arg1: number, arg2: number, result: number, cont: "end" }
         // negate a number and terminate
     | { kind: "neg", value: number, negation: number, cont: "end" }
+        // take two numbers out of a JSON file and continue with add
+    | { kind: "jsonAdd", payload: Add, cont: "add" }
+        // take a string and convert it to a number, then continue with neg
+    | { kind: "stringNeg", payload: string, cont: "neg" }
         // terminate protocol
     | { kind: "end" }
 
@@ -55,14 +64,14 @@ const chooseSession = (ses: Session, msg: string[]): string => {
             break;
         }
         case "end": {
-            break;
+            return nextStep(ses);
         }
     }
-    return nextStep(ses);
+    return "waiting";
 }
 
 // check the input and generate a message for an invalid input which will be returned to the client
-const checkMessage = (msg: string[]): string => {
+const invalidMessage = (msg: string[]): string => {
     let return_message: string = "";
     if (msg.length > 5) {
         for (let i = 1; i < 5; i++) {
@@ -75,7 +84,51 @@ const checkMessage = (msg: string[]): string => {
             return_message += " " + msg[i];
         }
     }
-    return return_message
+    return return_message;
+}
+
+// turns a written out number to a number (only 1 - 9)
+const nameToNumber = (name: string): number => {
+    let num: number;
+    switch(name) {
+        case "one": { num = 1; break; }
+        case "two": { num = 2; break; }
+        case "three": { num = 3; break; }
+        case "four": { num = 4; break; }
+        case "five": { num = 5; break; }
+        case "six": { num = 6; break; }
+        case "seven": { num = 7; break; }
+        case "eight": { num = 8; break; }
+        case "nine": { num = 9; break; }
+        default: { num = 0; break; }
+    }
+    return num;
+}
+
+// handle the payload given by the session
+const handlePayload = (ses: Session) => {
+
+    let continue_value: string[] = [];
+
+    if (ses.kind === "jsonAdd") {
+
+        continue_value.push(ses.cont);
+        continue_value.push((ses.payload.arg1).toString());
+        continue_value.push((ses.payload.arg2).toString());
+    }
+
+    else if (ses.kind === "stringNeg") {
+
+        continue_value.push(ses.cont);
+        continue_value.push(nameToNumber(ses.payload).toString());
+    }
+
+    console.log(continue_value);
+    console.log(chooseSession(getSession(continue_value), continue_value));
+
+    chooseSession(getSession(continue_value), continue_value);
+    continue_value = [];
+
 }
 
 
@@ -108,11 +161,22 @@ wss.on('connection', (ws) => {
         else if ((first_msg === 'add') || (first_msg === 'neg') || (first_msg === 'end')) {
 
             const ses: Session = getSession(inc_msg);
-            
-            ws.send(chooseSession(ses, inc_msg));
+            const return_message: string = chooseSession(ses, inc_msg);
+
+            if (return_message === "waiting") {
+                // do nothing
+            }
+            else if (return_message === "closeConnection") {
+                ws.send(return_message);
+
+            }
+            else if (return_message.startsWith("Result") || return_message.startsWith("Negation")) {
+                ws.send(return_message);
+                ws.send(nextStep(ses));
+            }
         }
         else if (first_msg === "invalidInput") {
-            invalid_input = checkMessage(inc_msg);
+            invalid_input = invalidMessage(inc_msg);
         }
         if (inc_msg[inc_msg.length-1] === "error") {
             ws.send(`# Invalid input: ${invalid_input}`);
