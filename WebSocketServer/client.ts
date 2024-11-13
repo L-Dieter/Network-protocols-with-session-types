@@ -4,17 +4,46 @@ import WebSocket from "ws";
 
 let server_url: string = process.argv[2];
 let func: string = process.argv[3];
-let arg1: number = Number(process.argv[4]);
+let arg1: number;
 let arg2: number;
-if (func === "add") {
-    arg2 = Number(process.argv[5]);
+let json_arg: JSON;
+let string_arg: string;
+
+switch(func) {
+    case "neg": {
+        arg1 = Number(process.argv[4]);
+    }
+    case "add": {
+        arg1 = Number(process.argv[4]);
+        arg2 = Number(process.argv[5]);
+    }
+    case "jsonAdd": {
+
+        if (!isNaN(+process.argv[4]) && !isNaN(+process.argv[5])) {
+            
+            json_arg = JSON.parse(`{ "arg1": ${process.argv[4]}, "arg2": ${process.argv[5]} }`);
+        }
+        else {
+
+            json_arg = JSON.parse('{"nothing": 0}');
+        }
+    }
+    case "stringNeg": {
+        string_arg = process.argv[4];
+    }
+    case "help": {
+        string_arg = process.argv[4];
+    }
+
 }
+
 
 const ws = new WebSocket(`${server_url}`);
 
 
 ws.on('open', () => {
     console.log('[Client] Connected.');
+    
     ws.send('Connected to WebSocket server');
     if (func === "neg" && !isNaN(arg1) && process.argv[5] === undefined) {
         ws.send(func);
@@ -25,6 +54,18 @@ ws.on('open', () => {
         ws.send(func);
         ws.send(arg1);
         ws.send(arg2);
+    }
+    else if (func == "jsonAdd" && process.argv[6] === undefined) {
+        ws.send(func);
+        ws.send(JSON.stringify(json_arg));
+    }
+    else if (func === "stringNeg" && process.argv[5] === undefined) {
+        ws.send(func);
+        ws.send(string_arg);
+    }
+    else if (func === "help" && process.argv[5] === undefined) {
+        ws.send(func);
+        ws.send(string_arg);
     }
     else {
         ws.send("invalidInput");
