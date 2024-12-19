@@ -11,11 +11,11 @@ export type Label = string
 
 export type Session = 
         // single operation 
-      { kind: "single"; dir: Dir; payload: Type; program: Program; cont: SessionP}
+      { kind: "single"; dir: Dir; payload: Type; program: Program; cont: Session}
         // choice operator with a single program as param
-    // | { kind: "choiceAlt"; dir: Dir; program: Program; alternatives: Record<Label, SessionP>}
+    // | { kind: "choiceAlt"; dir: Dir; program: Program; alternatives: Record<Label, Session>}
         // choice operaton
-    | { kind: "choice"; dir: Dir; alt_program: Record<Label, Program>; alternatives: Record<Label, SessionP>}
+    | { kind: "choice"; dir: Dir; alt_program: Record<Label, Program>; alternatives: Record<Label, Session>}
         // terminate protocol
     | { kind: "end" }
 
