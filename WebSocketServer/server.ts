@@ -1,133 +1,260 @@
 // Start a WebSocket server
 
 import { WebSocketServer } from "ws";
+import { Type, Dir, Label, Session, Program } from './protocol';
 
 const port = 3000;
 const wss = new WebSocketServer({port});
 
-type Add = {
-    arg1: number
-    arg2: number
+const operations: string[] = [
+    "add",
+    "neg",
+    "jsonAdd",
+    "stringNeg"
+]
+
+
+const mk_adder = (): Program => {
+    var arg1: number, arg2: number;
+    return {
+        command: "recv",
+        put_value: (v: any) => arg1 = v,
+        cont: { command: "recv",
+            put_value: (v: any) => arg2 = v,
+            cont: { command: "send",
+                get_value: () => arg1 + arg2,
+                cont: {
+                    command: "end"
+                }
+            }
+        }
+    }
 }
 
-type Session = 
-        // add two numbers and terminate
-    | { kind: "add", arg1: number, arg2: number, result: number, cont: "end" }
-        // negate a number and terminate
-    | { kind: "neg", value: number, negation: number, cont: "end" }
-        // take two numbers out of a JSON file and continue with add
-    | { kind: "jsonAdd", payload: Add, cont: "add" }
-        // take a string and convert it to a number, then continue with neg
-    | { kind: "stringNeg", payload: string, cont: "neg" }
-        // terminate protocol
-    | { kind: "end" }
+const mk_neg = (): Program => {
+    var arg: number;
+    return {
+        command: "recv",
+        put_value: (v: any) => arg = v,
+        cont: {
+            command: "send",
+            get_value: () => -arg,
+            cont: {
+                command: "end"
+            }
+        }
+    }
+}
 
-    
+const mk_arith = (): Program => {
+    return {
+        command: "choose",
+        do_match: (label: Label) => null,
+        alt_cont: {
+            add: mk_adder(),
+            neg: mk_neg()
+        }
+    }
+}
 
-// initialize a Session based on the first input
-const initSession = (input: string): Session => {
-    if (input === "add") {
-        return { kind: "add", arg1: 0, arg2: 0, result: 0, cont: "end" };
-    } 
-    else if (input === "neg") {
-        return { kind: "neg", value: 0, negation: 0, cont: "end" };
+const mk_jsonAdd = (): Program => {
+    var v_add: { arg1: number, arg2: number};
+    return {
+        command: "recv",
+        put_value: (v: any) => v_add = v,
+        cont: {
+            command: "send",
+            get_value: () => v_add.arg1 + v_add.arg2,
+            cont: {
+                command: "end"
+            }
+        }
     }
-    else if (input === "jsonAdd") {
-        return { kind: "jsonAdd", payload: { arg1: 0, arg2: 0 }, cont: "add"};
+}
+
+const mk_stringNeg = (): Program => {
+    var arg: string;
+    return {
+        command: "recv",
+        put_value: (v: any) => arg = v,
+        cont: {
+            command: "send",
+            get_value: () => -nameToNumber(arg),
+            cont: {
+                command: "end"
+            }
+        }
     }
-    else if (input === "stringNeg") {
-        return { kind: "stringNeg", payload: "", cont: "neg" };
+}
+
+
+
+// update the session
+const updateSession = (ses: Session,  val: { payload?: any, label?: string } ): void => {
+    let new_ses: Session = { kind: "end" };
+    if (ses.kind === "single") {
+        if (ses.program.command !== "end") {
+            if (ses.program.command !== "choose") {
+                ses.program = ses.program.cont;
+            } 
+            else if (typeof val.label === 'string') {
+                ses.program = ses.program.alt_cont[val.label];
+            }
+        } 
+        if (ses.program.command === "recv") {
+            ses.dir = "recv";
+            // ses.payload = payload;
+        }
+        else if (ses.program.command === "send") {
+            ses.dir = "send";
+            // ses.payload = ses.program.get_value();
+        }
+        else if (ses.program.command === "end") {
+            if (ses.cont.kind !== "end") {
+                ses = ses.cont;
+            }
+        }
     }
-    return { kind: "end" };
+    else if (ses.kind === "choice") {
+        if (typeof val.label === 'string') {
+            if (ses.alt_program[val.label.concat("_cont")]) {
+                const new_prog: Program = ses.alt_program[val.label.concat("_cont")];
+                if (new_prog.command !== "choose" && new_prog.command !== "end") {
+                    ses.alt_program[val.label.concat("_cont")] = new_prog.cont;
+                }
+                else if (new_prog.command === "choose") {
+                    ses.alt_program[val.label.concat("_cont")] = new_prog.alt_cont[val.label];
+                }
+                if (new_prog.command === "recv") {
+                    ses.dir = "recv";
+                    // ses.payload = payload;
+                }
+                else if (new_prog.command === "send") {
+                    ses.dir = "send";
+                    // ses.payload = ses.program.get_value();
+                }
+                else if (new_prog.command === "end") {
+                    if (ses.alternatives[val.label]) {
+                        ses = ses.alternatives[val.label];
+                    }
+                }
+            }
+            else if (ses.alt_program[val.label].command !== "end") {
+                ses.alt_program[val.label.concat("_cont")] = ses.alt_program[val.label]
+            }
+            else {
+                ses = ses.alternatives[val.label];
+                // new_ses = initSession("single");
+            }
+        }
+        // new_ses = initSession("single");
+        // else if (new_ses.kind === "single" && typeof val.label === 'string') {
+        //     new_ses.program = ses.alt_program[val.label];
+        //     ses = new_ses;
+        //     updateSession(ses, {});
+        // }
+    }
+}
+
+// init session
+const initSession = (kind: string): Session => {
+    if (kind === "single") {
+
+        return { kind: kind, dir: "recv", payload: { type: "null" } ,
+                program: { command: "end"}, cont: { kind: "end"} }
+    }
+    else if (kind === "choice") {
+
+        return { kind: kind, dir: "recv", alt_program: {},
+                alternatives:  {} }
+    }
+    return { kind: 'end' }
 }
 
 // fill the Session with the given arguments
-const fillSession = (input: number | string | JSON, ses: Session, index?: number): void => {
-
-
-    if (ses.kind === "add" && typeof input === 'number') {
-        switch(index) {
-            case 1: {
-                ses.arg1 = input;
-                break;
-            }
-            case 2: {
-                ses.arg2 = input;
-                ses.result = ses.arg1 + ses.arg2;
-                break;
-            }
-        }
-
-    } 
-    else if (ses.kind === "neg" && typeof input === 'number') {
-        ses.value = input;
-        ses.negation = -ses.value;
+const fillSession = (ses: Session, program: Program): void => {
+    if (ses.kind === "single") {
+        ses.program = program;
     }
-    else if (ses.kind === "jsonAdd" && typeof input === 'object') {
-        ses.payload.arg1 = Object.values(input)[0];
-        ses.payload.arg2 = Object.values(input)[1];
-    }
-    else if (ses.kind === "stringNeg" && typeof input === 'string') {
-        ses.payload = input;
-    }
-
 }
 
-
-// check the continue value of a Session and keep goin with this step
-const nextStep = (ses: Session): string => {
-    if (ses.kind !== "end") {
-
-        if (ses.cont === "end") {
-            return "closeConnection";
-        }
-
-    }
-    return "closeConnection";
-}
-
-// decide which kind of Session is used
-const chooseSession = (ses: Session, index: number): string => {
-    switch(ses.kind) {
+const chooseSession = (kind: string): Session => {
+    let ses: Session;
+    switch (kind) {
         case "add": {
-            if (index === 2) {
-
-                return ("Result: " + ses.result);
-            }
+            ses = initSession("single");
+            fillSession(ses, mk_adder());
             break;
         }
         case "neg": {
-            if (index === 1) {
-
-                return ("Negation: " + ses.negation);
-            }
+            ses = initSession("single");
+            fillSession(ses, mk_neg());
             break;
         }
-        case "end": {
-
-            return nextStep(ses);
+        case "arith": {
+            ses = initSession("single");
+            fillSession(ses, mk_arith());
+            break;
+        }
+        case "jsonAdd": {
+            ses = initSession("single");
+            fillSession(ses, mk_jsonAdd());
+            break;
+        }
+        case "stringNeg": {
+            ses = initSession("single");
+            fillSession(ses, mk_stringNeg());
+            break;
+        }
+        default: {
+            ses = initSession("choice");
+            break;
         }
     }
-    return "waiting";
+    return ses;
+}
+
+// check if the payload got the right type
+const checkPayload = (ses: Session, input: string | JSON): boolean => {
+
+
+    if (ses.kind === "single" && typeof input === 'object') {
+
+        const json_length: number = Object.keys(input).length;
+
+        if (!isNaN(+Object.values(input)[0]) && !isNaN(+Object.values(input)[1]) && json_length === 2) {
+            return true;
+        }
+
+
+    }
+    else if (ses.kind === "single" && typeof input === 'string') {
+
+        let is_str_number: boolean;
+
+        switch (input) {
+            case "one": { is_str_number = true; break; }
+            case "two": { is_str_number = true; break; }
+            case "three": { is_str_number = true; break; }
+            case "four": { is_str_number = true; break; }
+            case "five": { is_str_number = true; break; }
+            case "six": { is_str_number = true; break; }
+            case "seven": { is_str_number = true; break; }
+            case "eight": { is_str_number = true; break; }
+            case "nine": { is_str_number = true; break; }
+            default: { is_str_number = false; break; }
+        }
+
+        return is_str_number;
+
+    }
+
+    return false;
+
 }
 
 
-// check the input and generate a message for an invalid input which will be returned to the client
-const invalidMessage = (msg: string[]): string => {
-    let return_message: string = "";
-    if (msg.length > 5) {
-        for (let i = 1; i < 5; i++) {
-            return_message += " " + msg[i];
-        }
-        return_message += " " + `... [${msg.length-6} more]`;
-    }
-    else {
-        for (let i = 1; i < msg.length-1; i++) {
-            return_message += " " + msg[i];
-        }
-    }
-    return return_message;
-}
+
 
 
 // gives the client some more information about a specific operation
@@ -175,169 +302,124 @@ const nameToNumber = (name: string): number => {
 }
 
 
-// check if the payload got the right type
-const checkPayload = (ses: Session, input: string | JSON): boolean => {
-
-    if (ses.kind === "jsonAdd" && typeof input === 'object') {
-
-        const json_length: number = Object.keys(input).length;
-
-        if (!isNaN(+Object.values(input)[0]) && !isNaN(+Object.values(input)[1]) && json_length === 2) {
-            return true;
-        }
-    }
-    else if (ses.kind === "stringNeg" && typeof input === 'string') {
-
-        let is_str_number: boolean;
-
-        switch(input) {
-            case "one": { is_str_number = true; break; }
-            case "two": { is_str_number = true; break; }
-            case "three": { is_str_number = true; break; }
-            case "four": { is_str_number = true; break; }
-            case "five": { is_str_number = true; break; }
-            case "six": { is_str_number = true; break; }
-            case "seven": { is_str_number = true; break; }
-            case "eight": { is_str_number = true; break; }
-            case "nine": { is_str_number = true; break; }
-            default: { is_str_number = false; break; }
-        }
-
-        return is_str_number;
-    }
-
-    return false;
-}
-
-// handle the payload given by the session
-const handlePayload = (ses: Session): Session => {
-
-    let cont_ses: Session;
-
-    if (ses.kind === "jsonAdd") {
-
-        cont_ses = initSession("add");
-
-        if (cont_ses.kind === "add") {
-            
-            fillSession(+ses.payload.arg1, cont_ses, 1)
-            fillSession(+ses.payload.arg2, cont_ses, 2)
-            return ses = cont_ses;
-        }
-    }
-
-    else if (ses.kind === "stringNeg") {
-        
-        cont_ses = initSession("neg");
-
-        if (cont_ses.kind === "neg") {
-
-            fillSession(nameToNumber(ses.payload), cont_ses);
-            return ses = cont_ses;
-        }
-    }
-
-    return ses;
-
-}
 
 
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
     
-    let inc_msg: string[] = [];
-    let index: number = -1;
     let ses: Session = { kind: "end" };
+    let first_msg: string;
     
 
-    ws.on('message', (message: string) => {
+    // incoming message of type RawData
+    ws.on('message', (message) => {
 
         
         console.log(`Received message from client: ${message}`);
         
-        const msg: string = message.toString();
+        let msg: string = message.toString();
 
-        // check if the Session has to be initialized or filled in
-        if (index === 0 && msg !== "help") {
+        if (operations.includes(msg)) {
+            ses = chooseSession(msg);
+            first_msg = msg;
+        }
 
-            ses = initSession(msg);
-        }
-        else if (!isNaN(+msg) && (ses.kind === "add" || ses.kind === "neg")) {
-            
-            fillSession(+msg, ses, index);
-        }
-        else if (ses.kind === "jsonAdd") {
-            
-            let check_json: JSON = JSON.parse(msg);
-            if (!checkPayload(ses, check_json)) {
-                ws.send("Payload doesnt fit the requirement");
+
+        // sessions of type "single"
+        // case: arithmetic operation
+        if (ses.kind === "single" && !isNaN(+msg) && (first_msg === "add" || first_msg === "neg")) {
+            if (ses.dir === "recv") {
+                if (ses.program.command === "recv") {
+                    ses.program.put_value(+msg);
+                }
+                updateSession(ses, {});
+            }
+
+            if (ses.dir === "send") {
+                if (ses.program.command === "send") {
+                    ws.send(+ses.program.get_value());
+                }
+                updateSession(ses, {});
+            }
+
+            if (ses.program.command === "end" && ses.cont.kind === "end") {
                 ws.send("closeConnection");
             }
-            else {
-                fillSession(check_json, ses);
-                ses = handlePayload(ses);
-                index = 2;
-            }
-        }
-        else if (ses.kind === "stringNeg") {
-
-            if (!checkPayload(ses, msg)) {
-                ws.send("Payload doesnt fit the requirement");
-                ws.send("closeConnection");
-            }
-            else {
-                fillSession(msg, ses);
-                ses = handlePayload(ses);
-                index = 1;
-            }
 
         }
-
+        // case: different inputs than numbers
+        else if (ses.kind === "single" && !operations.includes(msg) && (first_msg === "jsonAdd" || first_msg === "stringNeg")) {
+            if (isNaN(+msg) && first_msg === "stringNeg") {
+                if (checkPayload(ses, msg)) {
+                    if (ses.dir === "recv") {
+                        if (ses.program.command === "recv") {
+                            ses.program.put_value(msg);
+                        }
+                        updateSession(ses, {});
+                    }
         
-        // push the message to the stack if it is an operation
-        if (msg !== 'Connected to WebSocket server') {
-            inc_msg.push(msg);
-            console.log(inc_msg);
-        }
+                    if (ses.dir === "send") {
+                        if (ses.program.command === "send") {
+                            ws.send(ses.program.get_value());
+                        }
+                        updateSession(ses, {});
+                    }
+                }
+                else {
+                    ws.send("Wrong input");
+                    ws.send("closeConnection");
+                }
+            }
+            else if (typeof JSON.parse(msg) === 'object') {
+                if (checkPayload(ses, JSON.parse(msg))) {
+                    if (ses.dir === "recv") {
+                        if (ses.program.command === "recv") {
+                            ses.program.put_value(JSON.parse(msg));
+                        }
+                        updateSession(ses, {});
+                    }
+        
+                    if (ses.dir === "send") {
+                        if (ses.program.command === "send") {
+                            ws.send(ses.program.get_value());
+                        }
+                        updateSession(ses, {});
+                    }
+                }
+                else {
+                    ws.send("Wrong input");
+                    ws.send("closeConnection");
+                }
 
-
-        if (index === 1 || index === 2) {
-
-            const return_message: string = chooseSession(ses, index);
-
-            if (inc_msg[0] === "help") {
-                ws.send(helpMessage(msg));
+            }
+            else {
+                ws.send("Wrong input");
                 ws.send("closeConnection");
             }
-            else if (return_message === "waiting") {
-                // do nothing
-            }
-            else if (return_message === "closeConnection") {
-                ws.send(return_message);
 
+
+            if (ses.program.command === "end" && ses.cont.kind === "end") {
+                ws.send("closeConnection");
             }
-            else if (return_message.startsWith("Result") || return_message.startsWith("Negation")) {
-                ws.send(return_message);
-                ws.send(nextStep(ses));
+
+        }
+        else if (ses.kind === "single") {
+            if (ses.program.command === "choose") {
+                updateSession(ses, { label: msg });
             }
         }
-
-
-        if (inc_msg[inc_msg.length-1] === "error") {
-
-            ws.send(`# Invalid input: ${invalidMessage(inc_msg)}`);
-            ws.send(`# Allowed operation(s):`);
-            ws.send(`#    .. <serverurl> add <number> <number>`);
-            ws.send(`#    .. <serverurl> neg <number>`);
-            ws.send(`#    .. <serverurl> jsonAdd <number> <number>`);
-            ws.send(`#    .. <serverurl> stringNeg <string>`);
-            ws.send(`#    For more information on 'jsonAdd' or 'stringNeg' type "help <Operation>"`);
-            inc_msg = [];
-            ws.send(`closeConnection`);
+        // sessions of type "choice"
+        else if (ses.kind === "choice") {
+            if (ses.dir === "recv") {
+                if (ses.alt_program[msg] === mk_adder()) {
+                    ses = chooseSession("add");
+                }
+                else if (ses.alt_program[msg] === mk_neg()) {
+                    ses = chooseSession("neg");
+                }
+            }
         }
-
-        index++;
 
             
     });
@@ -345,9 +427,6 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         console.log('Client disconnected');
     });
-    
-    // Reply to the connection of the client
-    ws.send(`Hello, this is the Server!`);
 
 });
 
