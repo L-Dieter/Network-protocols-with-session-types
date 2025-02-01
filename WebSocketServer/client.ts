@@ -58,7 +58,6 @@ const getMessage = (): void => {
         case "neg": {
             arg1 = Number(process.argv[4]);
             if (!isNaN(arg1) && process.argv[5] === undefined) {
-                msg_to_send.push(func);
                 msg_to_send.push(arg1);
             }
             else {
@@ -71,7 +70,6 @@ const getMessage = (): void => {
             arg2 = Number(process.argv[5]);
             if (!isNaN(arg1) && !isNaN(arg2)
                 && process.argv[6] === undefined) {
-                msg_to_send.push(func);
                 msg_to_send.push(arg1);
                 msg_to_send.push(arg2);
             }
@@ -92,8 +90,7 @@ const getMessage = (): void => {
             }
     
             if (process.argv[6] === undefined) {
-                msg_to_send.push(func);
-                msg_to_send.push(JSON.stringify(json_arg));
+                msg_to_send.push(json_arg);
             }
             else {
                 getErrorMessage();
@@ -103,7 +100,6 @@ const getMessage = (): void => {
         case "stringNeg": {
             string_arg = process.argv[4];
             if (process.argv[5] === undefined) {
-                msg_to_send.push(func);
                 msg_to_send.push(string_arg);
             }
             else {
@@ -111,14 +107,14 @@ const getMessage = (): void => {
             }
             break;
         }
-        case "help": {
-            string_arg = process.argv[4];
-            if (process.argv[5] === undefined) {
-                msg_to_send.push(func);
-                msg_to_send.push(string_arg);
-            }
-            else {
-                getErrorMessage();
+        case "test": {
+            for (let i = 4; i < process.argv.length; i++) {
+                if (!isNaN(+process.argv[i])) {
+                    msg_to_send.push(+process.argv[i]);
+                }
+                else {
+                    msg_to_send.push(process.argv[i]);
+                }
             }
             break;
         }
@@ -134,7 +130,7 @@ const getMessage = (): void => {
 // send the message one by one
 const sendMessage = (): void => {
     for (let i = 0; i < msg_to_send.length; i++) {
-        ws.send(msg_to_send[i]);
+        setTimeout(() => ws.send(JSON.stringify(msg_to_send[i])), 100 * (i + 1));
     }    
 }
 
@@ -146,25 +142,30 @@ ws.on('open', () => {
     getMessage();
 
     if (msg_to_send.length !== 0) {
-        ws.send('Connected to WebSocket server');
         sendMessage();
     }
 
     
 });
 
-ws.on('message', (data: WebSocket.Data) => {
-    if (data.toString() === "closeConnection") {
+ws.on('message', (data: any) => {
+    let msg: any = JSON.parse(data);
+    if (msg === "closeConnection") {
         ws.close();
     }
     else {
-        const prs_data: string[] = data.toString().split(" ");
-        const first_symbol: string = prs_data[0];
-        if (first_symbol === "#" || first_symbol === "Hello,") {
-            console.log(`${data}`);
+        if (typeof msg === 'string') {
+            const prs_data: string[] = msg.split(" ");
+            const first_symbol: string = prs_data[0];
+            if (first_symbol === "#" || first_symbol === "Hello,") {
+                console.log(`${msg}`);
+            }
+            else {
+                console.log(`Received a message from the server:\n ${msg}`);
+            }
         }
         else {
-            console.log(`Received a message from the server:\n ${data}`);
+            console.log(`Received a message from the server:\n ${msg}`);
         }
     }
 });
