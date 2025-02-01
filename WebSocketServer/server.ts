@@ -2,432 +2,414 @@
 
 import { WebSocketServer } from "ws";
 import { Type, Dir, Label, Session, Program } from './protocol';
+import * as programs from './programs';
+
 
 const port = 3000;
 const wss = new WebSocketServer({port});
 
-const operations: string[] = [
-    "add",
-    "neg",
-    "jsonAdd",
-    "stringNeg"
-]
-
-
-const mk_adder = (): Program => {
-    var arg1: number, arg2: number;
-    return {
-        command: "recv",
-        put_value: (v: any) => arg1 = v,
-        cont: { command: "recv",
-            put_value: (v: any) => arg2 = v,
-            cont: { command: "send",
-                get_value: () => arg1 + arg2,
-                cont: {
-                    command: "end"
-                }
-            }
-        }
-    }
-}
-
-const mk_neg = (): Program => {
-    var arg: number;
-    return {
-        command: "recv",
-        put_value: (v: any) => arg = v,
-        cont: {
-            command: "send",
-            get_value: () => -arg,
-            cont: {
-                command: "end"
-            }
-        }
-    }
-}
-
-const mk_arith = (): Program => {
-    return {
-        command: "choose",
-        do_match: (label: Label) => null,
-        alt_cont: {
-            add: mk_adder(),
-            neg: mk_neg()
-        }
-    }
-}
-
-const mk_jsonAdd = (): Program => {
-    var v_add: { arg1: number, arg2: number};
-    return {
-        command: "recv",
-        put_value: (v: any) => v_add = v,
-        cont: {
-            command: "send",
-            get_value: () => v_add.arg1 + v_add.arg2,
-            cont: {
-                command: "end"
-            }
-        }
-    }
-}
-
-const mk_stringNeg = (): Program => {
-    var arg: string;
-    return {
-        command: "recv",
-        put_value: (v: any) => arg = v,
-        cont: {
-            command: "send",
-            get_value: () => -nameToNumber(arg),
-            cont: {
-                command: "end"
-            }
-        }
-    }
-}
-
 
 
 // update the session
-const updateSession = (ses: Session,  val: { payload?: any, label?: string } ): void => {
-    let new_ses: Session = { kind: "end" };
+const updateSession = (ses: Session, label?: string): Promise<Session> => {
+
     if (ses.kind === "single") {
-        if (ses.program.command !== "end") {
-            if (ses.program.command !== "choose") {
-                ses.program = ses.program.cont;
-            } 
-            else if (typeof val.label === 'string') {
-                ses.program = ses.program.alt_cont[val.label];
-            }
-        } 
         if (ses.program.command === "recv") {
             ses.dir = "recv";
-            // ses.payload = payload;
         }
         else if (ses.program.command === "send") {
             ses.dir = "send";
-            // ses.payload = ses.program.get_value();
         }
-        else if (ses.program.command === "end") {
-            if (ses.cont.kind !== "end") {
-                ses = ses.cont;
-            }
+        if (ses.program.command === "end") {
+            ses = ses.cont;
         }
     }
     else if (ses.kind === "choice") {
-        if (typeof val.label === 'string') {
-            if (ses.alt_program[val.label.concat("_cont")]) {
-                const new_prog: Program = ses.alt_program[val.label.concat("_cont")];
-                if (new_prog.command !== "choose" && new_prog.command !== "end") {
-                    ses.alt_program[val.label.concat("_cont")] = new_prog.cont;
-                }
-                else if (new_prog.command === "choose") {
-                    ses.alt_program[val.label.concat("_cont")] = new_prog.alt_cont[val.label];
-                }
-                if (new_prog.command === "recv") {
-                    ses.dir = "recv";
-                    // ses.payload = payload;
-                }
-                else if (new_prog.command === "send") {
-                    ses.dir = "send";
-                    // ses.payload = ses.program.get_value();
-                }
-                else if (new_prog.command === "end") {
-                    if (ses.alternatives[val.label]) {
-                        ses = ses.alternatives[val.label];
-                    }
-                }
-            }
-            else if (ses.alt_program[val.label].command !== "end") {
-                ses.alt_program[val.label.concat("_cont")] = ses.alt_program[val.label]
-            }
-            else {
-                ses = ses.alternatives[val.label];
-                // new_ses = initSession("single");
-            }
+        if (ses.program.command === "recv") {
+            ses.dir = "recv";
         }
-        // new_ses = initSession("single");
-        // else if (new_ses.kind === "single" && typeof val.label === 'string') {
-        //     new_ses.program = ses.alt_program[val.label];
-        //     ses = new_ses;
-        //     updateSession(ses, {});
-        // }
+        else if (ses.program.command === "send") {
+            ses.dir = "send";
+        }
+        if (ses.program.command === "end" && label) {
+            ses = ses.alternatives[label];
+        }
     }
+    else {
+        return Promise.reject("Failed to update the session");
+    }
+
+    return Promise.resolve(ses);
+
 }
 
-// init session
-const initSession = (kind: string): Session => {
+// update the program
+const updateProgram = (p: Program, s: Session, val?: { value?: any, label?: string }): Promise<void> => {
+
+    let return_value: any;
+    let updated: boolean = false;
+
+    if (p.command !== "end" && p.command !== "choose") {
+        if (p.command === "recv" && val) {
+            p.put_value(val.value);
+            updated = true;
+        }
+        else if (p.command === "send") {
+            return_value = p.get_value();
+        }
+        else if (p.command === "select") {
+            return_value = p.get_value();
+        }
+        p = p.cont;
+    }
+    else if (p.command === "choose" && val && val.label) {
+        p.do_match(val.label);
+        p = p.alt_cont[val.label];
+        updated = true;
+    }
+
+    if (s.kind !== "end") {
+        s.program = p;
+    }
+
+    if (return_value) {
+        return Promise.resolve(return_value);
+    }
+    else if (updated) {
+        return Promise.resolve();
+    }
+    else {
+        return Promise.reject('Failed to update the program');
+    }
+
+}
+
+// initialize a session based on the input string
+const initSession = (kind: string): Promise<Session> => {
     if (kind === "single") {
 
-        return { kind: kind, dir: "recv", payload: { type: "null" } ,
-                program: { command: "end"}, cont: { kind: "end"} }
+        return Promise.resolve({ kind: kind, dir: "recv", payload: { type: "null" } ,
+                program: { command: "end"}, cont: { kind: "end"} });
     }
     else if (kind === "choice") {
 
-        return { kind: kind, dir: "recv", alt_program: {},
-                alternatives:  {} }
+        return Promise.resolve({ kind: kind, dir: "recv", program: { command: "end"},
+                alternatives:  { end: { kind: "end" } } });
     }
-    return { kind: 'end' }
+    return Promise.reject('No session of that kind available');
 }
 
 // fill the Session with the given arguments
-const fillSession = (ses: Session, program: Program): void => {
-    if (ses.kind === "single") {
-        ses.program = program;
+const fillSession = (ses: Session, val?: { payload?: any, program?: Program }): Promise<void> => {
+    if (ses.kind !== "end" && val) {
+        if (val.payload && ses.kind === "single") {
+            ses.payload = val.payload;
+        }
+
+        if (val.program) {
+            ses.program = val.program;
+        }
     }
+
+    return Promise.resolve();
 }
 
-const chooseSession = (kind: string): Session => {
-    let ses: Session;
-    switch (kind) {
-        case "add": {
-            ses = initSession("single");
-            fillSession(ses, mk_adder());
+// get a program out of a list based on a input string
+const getProgram = (p: string): Promise<Program> => {
+
+    const lower_prog: string = p.toLowerCase();
+    let prog: Program;
+
+    switch (lower_prog) {
+        case "mk_adder": {
+            prog = programs.mk_adder();
+            fillSession(session, { payload: { type: "number"} });
             break;
         }
-        case "neg": {
-            ses = initSession("single");
-            fillSession(ses, mk_neg());
+        case "mk_neg": {
+            prog = programs.mk_neg();
+            fillSession(session, { payload: { type: "number"} });
             break;
         }
-        case "arith": {
-            ses = initSession("single");
-            fillSession(ses, mk_arith());
+        case "mk_arith": {
+            prog = programs.mk_arith();
+            fillSession(session, { payload: { type: "string"} });
             break;
         }
-        case "jsonAdd": {
-            ses = initSession("single");
-            fillSession(ses, mk_jsonAdd());
+        case "mk_jsonadd": {
+            prog = programs.mk_jsonAdd();
+            fillSession(session, { payload: { type: "tuple"} });
             break;
         }
-        case "stringNeg": {
-            ses = initSession("single");
-            fillSession(ses, mk_stringNeg());
+        case "mk_stringneg": {
+            prog = programs.mk_stringNeg();
+            fillSession(session, { payload: { type: "string"} });
             break;
         }
         default: {
-            ses = initSession("choice");
+            return Promise.reject('Not a valid program');
+        }
+    }
+
+    return Promise.resolve(prog);
+}
+
+// check if the session and the program fit together
+const checkSession = (s: Session, p: Program): Promise<void> => {
+
+    var valid_session: boolean = false;
+    
+    if (s.kind !== "end") {
+        if (p.command) {
+            valid_session = true;
+        }
+    }
+
+    if (valid_session) {
+        return Promise.resolve();
+    }
+    else {
+        return Promise.reject('Session and program do not fit together');
+    }
+}
+
+const continueProgram = (p: Program, label?: Label): Promise<void> => {
+
+    switch (p.command) {
+        case "send": {
+            wss.emit('send');
             break;
         }
-    }
-    return ses;
-}
-
-// check if the payload got the right type
-const checkPayload = (ses: Session, input: string | JSON): boolean => {
-
-
-    if (ses.kind === "single" && typeof input === 'object') {
-
-        const json_length: number = Object.keys(input).length;
-
-        if (!isNaN(+Object.values(input)[0]) && !isNaN(+Object.values(input)[1]) && json_length === 2) {
-            return true;
+        case "recv":{
+            break;
         }
-
-
-    }
-    else if (ses.kind === "single" && typeof input === 'string') {
-
-        let is_str_number: boolean;
-
-        switch (input) {
-            case "one": { is_str_number = true; break; }
-            case "two": { is_str_number = true; break; }
-            case "three": { is_str_number = true; break; }
-            case "four": { is_str_number = true; break; }
-            case "five": { is_str_number = true; break; }
-            case "six": { is_str_number = true; break; }
-            case "seven": { is_str_number = true; break; }
-            case "eight": { is_str_number = true; break; }
-            case "nine": { is_str_number = true; break; }
-            default: { is_str_number = false; break; }
+        case "select":{
+            wss.emit('select');
+            break;
         }
-
-        return is_str_number;
-
+        case "choose":{
+            if (label) {
+                wss.emit('choose', label);
+            }
+            break;
+        }
+        case "end":{
+            wss.emit('end');
+            break;
+        }
+        default: {
+            Promise.reject("Not a valid command");
+        }
     }
 
-    return false;
-
+    return Promise.resolve();    
 }
 
 
 
 
 
-// gives the client some more information about a specific operation
-const helpMessage = (help: string): string => {
+let program: Program;
+let session: Session;
+let client: any;
 
-    let help_msg: string = "";
+// start the server with a given program and session
+const mk_server = async (p: string | Program, s: string | Session): Promise<void> => {
 
-    switch(help) {
-        case "jsonAdd": {
-            help_msg = "Operation: jsonAdd\n" 
-                + "Type jsonAdd <number> <number> to add two numbers out of a JSON.";
-                break;
+    try {
+
+        if (typeof s === "string") {
+            session = await initSession(s);
         }
-        case "stringNeg": {
-            help_msg = "Operation: stringNeg\n" 
-                + "Type stringNeg <string> to get a written out number convertet to its equivalent number and negate it.\n"
-                + "Allowed options:\n"
-                + "[one, two, three, four, five, six, seven, eight, nine]";
-                break;
+        else {
+            session = s;
         }
-        default: { help_msg = `There is no operation with the name "${help}"`; break; }
+
+        if (typeof p === "string") {
+            program = await getProgram(p);
+        }
+        else {
+            program = p;
+        }
+
+        await checkSession(session, program);
+
+        fillSession(session, { program: program} );
+
+        console.log(`Listening at ${port}...`);
+
     }
-    return help_msg;
+    catch (error) {
+        
+        console.error(error);
 
-}
+        wss.close();
 
-
-
-// turns a written out number to a number (only 1 - 9)
-const nameToNumber = (name: string): number => {
-    let num: number;
-    switch(name) {
-        case "one": { num = 1; break; }
-        case "two": { num = 2; break; }
-        case "three": { num = 3; break; }
-        case "four": { num = 4; break; }
-        case "five": { num = 5; break; }
-        case "six": { num = 6; break; }
-        case "seven": { num = 7; break; }
-        case "eight": { num = 8; break; }
-        case "nine": { num = 9; break; }
-        default: { num = 0; break; }
     }
-    return num;
-}
 
+    await updateSession(session);
 
+    wss.on('connection', async (ws) => {
 
+        client = ws;
 
-
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-    
-    let ses: Session = { kind: "end" };
-    let first_msg: string;
-    
-
-    // incoming message of type RawData
-    ws.on('message', (message) => {
-
-        
-        console.log(`Received message from client: ${message}`);
-        
-        let msg: string = message.toString();
-
-        if (operations.includes(msg)) {
-            ses = chooseSession(msg);
-            first_msg = msg;
+        if (program.command !== "recv" && program.command !== "choose") {
+            await continueProgram(program);
         }
 
+        // incoming message of any type
+        ws.on('message', async (message: any) => {
 
-        // sessions of type "single"
-        // case: arithmetic operation
-        if (ses.kind === "single" && !isNaN(+msg) && (first_msg === "add" || first_msg === "neg")) {
-            if (ses.dir === "recv") {
-                if (ses.program.command === "recv") {
-                    ses.program.put_value(+msg);
-                }
-                updateSession(ses, {});
-            }
-
-            if (ses.dir === "send") {
-                if (ses.program.command === "send") {
-                    ws.send(+ses.program.get_value());
-                }
-                updateSession(ses, {});
-            }
-
-            if (ses.program.command === "end" && ses.cont.kind === "end") {
-                ws.send("closeConnection");
-            }
-
-        }
-        // case: different inputs than numbers
-        else if (ses.kind === "single" && !operations.includes(msg) && (first_msg === "jsonAdd" || first_msg === "stringNeg")) {
-            if (isNaN(+msg) && first_msg === "stringNeg") {
-                if (checkPayload(ses, msg)) {
-                    if (ses.dir === "recv") {
-                        if (ses.program.command === "recv") {
-                            ses.program.put_value(msg);
-                        }
-                        updateSession(ses, {});
-                    }
-        
-                    if (ses.dir === "send") {
-                        if (ses.program.command === "send") {
-                            ws.send(ses.program.get_value());
-                        }
-                        updateSession(ses, {});
-                    }
-                }
-                else {
-                    ws.send("Wrong input");
-                    ws.send("closeConnection");
-                }
-            }
-            else if (typeof JSON.parse(msg) === 'object') {
-                if (checkPayload(ses, JSON.parse(msg))) {
-                    if (ses.dir === "recv") {
-                        if (ses.program.command === "recv") {
-                            ses.program.put_value(JSON.parse(msg));
-                        }
-                        updateSession(ses, {});
-                    }
-        
-                    if (ses.dir === "send") {
-                        if (ses.program.command === "send") {
-                            ws.send(ses.program.get_value());
-                        }
-                        updateSession(ses, {});
-                    }
-                }
-                else {
-                    ws.send("Wrong input");
-                    ws.send("closeConnection");
-                }
-
-            }
-            else {
-                ws.send("Wrong input");
-                ws.send("closeConnection");
-            }
+            let msg: any = JSON.parse(message);
 
 
-            if (ses.program.command === "end" && ses.cont.kind === "end") {
-                ws.send("closeConnection");
+            if (session.kind !== "end") {
+                if (session.dir !== "recv" && session.program.command !== "end") {
+                    await continueProgram(session.program);
+                }
+                else if (session.program.command === "choose") {
+                    wss.emit('choose', msg);
+                }
+                else if (session.program.command === "recv") {
+                    wss.emit('recv', msg);
+                }
+                else if (session.kind === "choice") {
+                    wss.emit('recv', msg);
+                }
             }
 
-        }
-        else if (ses.kind === "single") {
-            if (ses.program.command === "choose") {
-                updateSession(ses, { label: msg });
-            }
-        }
-        // sessions of type "choice"
-        else if (ses.kind === "choice") {
-            if (ses.dir === "recv") {
-                if (ses.alt_program[msg] === mk_adder()) {
-                    ses = chooseSession("add");
-                }
-                else if (ses.alt_program[msg] === mk_neg()) {
-                    ses = chooseSession("neg");
-                }
-            }
-        }
+        });
 
             
+        ws.on('close', () => {
+            // console.log('Client disconnected');
+        });
+
+
     });
-        
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
+
+    
+}
+
+// "recv" operation of the program
+wss.on('recv', async (msg: any) => {
+
+    if (session.kind !== "end") {
+        if (session.program.command === "recv") {
+            session.program.put_value(msg);
+            await updateProgram(session.program, session, { value: msg });
+            session = await updateSession(session);
+        }
+        else if (session.kind === "choice") {
+            session = await updateSession(session, msg);
+        }
+    }
+
+    // continue with the next step
+    if (session.kind !== "end") {
+        await continueProgram(session.program);
+    }
+    else {
+        wss.emit('end');
+    }
+});
+
+// "send" operation of the program and session
+wss.on('send', async () => {
+
+    // get the operation done
+    if (session.kind !== "end") {
+        if (session.program.command === "send") {
+            client.send(JSON.stringify(session.program.get_value()));
+        }
+        await updateProgram(session.program, session);
+        session = await updateSession(session);
+    }
+
+    // continue with the next step
+    if (session.kind !== "end") {
+        await continueProgram(session.program);
+    }
+    else {
+        wss.emit('end');
+    }
+});
+
+// "select" operation of the program
+wss.on('select', async () => {
+
+    if (session.kind !== "end") {
+        if (session.program.command === "select" && session.program.cont.command === "choose") {
+            const select: string = session.program.get_value();
+            await updateProgram(session.program, session);
+            await continueProgram(session.program, select);
+        }
+        else if (session.kind === "choice") {
+            if (session.program.command === "select" && session.program.cont.command === "end") {
+                session = await updateSession(session, session.program.get_value());
+            }
+        }
+        else {
+            await updateProgram(session.program, session);
+            await continueProgram(session.program);
+        }
+    }
+    else {
+        wss.emit('end');
+    }
+});
+
+// "choose" operation of the program
+wss.on('choose', async (l: Label) => {
+
+    // get the operation done
+    if (session.kind !== "end" && l) {
+        await updateProgram(session.program, session, { label: l });
+        session = await updateSession(session);
+    }
+
+    // continue with the next step
+    if (session.kind !== "end") {
+        await continueProgram(session.program);
+    }
+    else {
+        wss.emit('end');
+    }
 
 });
 
-console.log(`Listening at ${port}...`);
+// "end" operation of the program and session
+wss.on('end', async () => {
+
+    // try to update the session (if the program finished)
+    if (session.kind !== "end") {
+        session = await updateSession(session);
+    }
+
+    // continue with the next step
+    if (session.kind === "single") {
+        await continueProgram(session.program);
+    }
+    else if (session.kind === "choice") {
+        // TODO?
+        // wait for a label to continue with the next session
+        // client.send(JSON.stringify("--- Label required ---"));
+        // client.close();
+        // wss.close();
+    }
+    else {
+        // close the connection
+        client.close();
+        wss.close();
+    }
+});
+
+wss.on('close', () => {
+    console.log("Connection closed");
+});
+
+
+const mk_program: string | Program = process.argv[2];
+const mk_session: string | Session = process.argv[3];
+
+mk_server(mk_program, mk_session);
