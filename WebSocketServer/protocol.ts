@@ -1,8 +1,14 @@
 export type Type = 
-    | { type: "number" } 
+      { type: "any" }
+    | { type: "number" }
     | { type: "string" }
+    | { type: "boolean" }
     | { type: "null" }
-    | { type: "tuple"; payload: Array<Type> }
+    | { type: "union", components: Array<Type> }
+    | { type: "record", payload: Record<string, Type>, name?: string }
+    // array of fixed length where each element may have a different type
+    | { type: "tuple", payload: Array<Type> }
+    // array of variable length where each element has the same type
     | { type: "array", payload: Type }
 
 export type Dir = "send" | "recv"
