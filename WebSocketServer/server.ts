@@ -376,7 +376,7 @@ const mk_server = async (p: string | Program, s: string | Session): Promise<void
     
 }
 
-// "recv" operation of the program
+// "recv" operation of the program and session
 wss.on('recv', async (msg: any) => {
 
     if (session.kind !== "end") {
