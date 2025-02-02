@@ -56,6 +56,7 @@ const updateProgram = (p: Program, s: Session, val?: { value?: any, label?: stri
         }
         else if (p.command === "send") {
             return_value = p.get_value();
+            updated = true;
         }
         else if (p.command === "select") {
             return_value = p.get_value();
@@ -206,6 +207,79 @@ const continueProgram = (p: Program, label?: Label): Promise<void> => {
 }
 
 
+// check if the input and a payload type fit together
+const checkPayload_V5 = async (input: any, type: Type, lap?: boolean): Promise<boolean> => {
+
+    let valid_payload: boolean = false;
+    let union_lap: boolean = false;
+
+    if (lap) {
+        union_lap = lap;
+    }
+
+    switch (type.type) {
+        case "string": if (typeof input === "string") { valid_payload = true; } break;
+        case "number": if (typeof input === "number") { valid_payload = true; } break;
+        case "boolean": if (typeof input === "boolean") { valid_payload = true; } break;
+        case "any": valid_payload = true; break;
+        case "null": if (input === null) { valid_payload = true; } break;
+        case "union": {
+            const union: Type[] = type.components;
+            for (let i = 0; i < union.length; i++) {
+                if (await checkPayload_V5(input, union[i], true)) {
+                    valid_payload = true;
+                    union_lap = false;
+                    break;
+                }
+            }
+            union_lap = false;
+            break;
+        }
+        case "record": {
+            if (typeof input === "object" && !Array.isArray(input)) {
+                const type_keys: string[] = Object.keys(type.payload);
+                const input_keys: string[] = Object.keys(input);
+                for (let i = 0; i < type_keys.length; i++) {
+                    valid_payload = await checkPayload_V5(input[input_keys[i]], type.payload[type_keys[i]]);
+                }
+            }
+            break;
+        }
+        case "tuple": {
+            if (Array.isArray(input)) {
+                for (let i = 0; i < type.payload.length; i++) {
+                    valid_payload = await checkPayload_V5(input[i], type.payload[i]);
+                }
+
+            }
+            break;
+        }
+        case "array": {
+            if (Array.isArray(input)) {
+                for (let i = 0; i < input.length; i++) {
+                    valid_payload = await checkPayload_V5(input[i], type.payload);
+                }
+            }
+            break;
+        }
+        default: valid_payload = false;
+
+    }
+
+
+    if (valid_payload) {
+        return Promise.resolve(true);
+    }
+    else if (union_lap) {
+        return Promise.resolve(false);
+    }
+    else {
+        return Promise.reject('Invalid payload');
+    }
+
+}
+
+
 
 
 
@@ -261,6 +335,17 @@ const mk_server = async (p: string | Program, s: string | Session): Promise<void
         ws.on('message', async (message: any) => {
 
             let msg: any = JSON.parse(message);
+
+            if (session.kind === "single") {
+                try {
+                    await checkPayload_V5(msg, session.payload);
+                }
+                catch (error) {
+                    console.error(error);
+                    ws.close();
+                    wss.close();
+                }
+            }
 
 
             if (session.kind !== "end") {
@@ -391,11 +476,16 @@ wss.on('end', async () => {
         await continueProgram(session.program);
     }
     else if (session.kind === "choice") {
-        // TODO?
-        // wait for a label to continue with the next session
-        // client.send(JSON.stringify("--- Label required ---"));
-        // client.close();
-        // wss.close();
+        if (session.program.command === "end") {
+            // wait for a label to continue with the next session
+            // TODO?
+            // client.send(JSON.stringify("--- Label required ---"));
+            // client.close();
+            // wss.close();
+        }
+        else {
+            await continueProgram(session.program);
+        }
     }
     else {
         // close the connection
