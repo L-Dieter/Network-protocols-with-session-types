@@ -2,18 +2,6 @@
 
 import WebSocket from "ws";
 
-let server_url: string = process.argv[2];
-let func: string = process.argv[3];
-let arg1: number;
-let arg2: number;
-let json_arg: JSON;
-let string_arg: string;
-
-let msg_to_send: any[] = [];
-
-const ws = new WebSocket(`${server_url}`);
-
-
 
 // generate a message for an invalid input
 const createInvalidMessage = (): string => {
@@ -26,6 +14,7 @@ const createInvalidMessage = (): string => {
         i++;
     }
 
+    // shorten the message if there are too many inputs
     if (msg.length > 5) {
         for (let i = 0; i < 5; i++) {
             return_message += " " + msg[i];
@@ -41,48 +30,52 @@ const createInvalidMessage = (): string => {
 }
 
 // print the message for an invalid input on the terminal and give some information about valid options
-const getErrorMessage = (): void => {
+const getErrorMessage = (ws: WebSocket): void => {
     console.log(`   # Invalid input: ${createInvalidMessage()}`);
     console.log(`   # Allowed operation(s):`);
     console.log(`   #    .. <serverurl> add <number> <number>`);
     console.log(`   #    .. <serverurl> neg <number>`);
     console.log(`   #    .. <serverurl> jsonAdd <number> <number>`);
     console.log(`   #    .. <serverurl> stringNeg <string>`);
-    console.log(`   #    For more information on 'jsonAdd' or 'stringNeg' type "help <Operation>"`);
+    console.log(`   #    .. <serverurl> test <any> ...`);
     ws.close();
 }
 
-// decide what to send
-const getMessage = (): void => {
+// decide what to send based on a "function" name
+const getMessage = (func: string, ws: WebSocket): any[] => {
+    let msg_to_send: any[] = [];
     switch(func) {
         case "neg": {
-            arg1 = Number(process.argv[4]);
+            const arg1 = Number(process.argv[4]);
             if (!isNaN(arg1) && process.argv[5] === undefined) {
                 msg_to_send.push(arg1);
             }
             else {
-                getErrorMessage();
+                getErrorMessage(ws);
             }
             break;
         }
         case "add": {
-            arg1 = Number(process.argv[4]);
-            arg2 = Number(process.argv[5]);
+            const arg1 = Number(process.argv[4]);
+            const arg2 = Number(process.argv[5]);
             if (!isNaN(arg1) && !isNaN(arg2)
                 && process.argv[6] === undefined) {
                 msg_to_send.push(arg1);
                 msg_to_send.push(arg2);
             }
             else {
-                getErrorMessage();
+                getErrorMessage(ws);
             }
             break;
         }
         case "jsonAdd": {
+
+            let json_arg: JSON;
     
             if (!isNaN(+process.argv[4]) && !isNaN(+process.argv[5])) {
-                
+
                 json_arg = JSON.parse(`{ "arg1": ${process.argv[4]}, "arg2": ${process.argv[5]} }`);
+                
             }
             else {
     
@@ -93,17 +86,17 @@ const getMessage = (): void => {
                 msg_to_send.push(json_arg);
             }
             else {
-                getErrorMessage();
+                getErrorMessage(ws);
             }
             break;
         }
         case "stringNeg": {
-            string_arg = process.argv[4];
+            const string_arg = process.argv[4];
             if (process.argv[5] === undefined) {
                 msg_to_send.push(string_arg);
             }
             else {
-                getErrorMessage();
+                getErrorMessage(ws);
             }
             break;
         }
@@ -119,57 +112,56 @@ const getMessage = (): void => {
             break;
         }
         default: {
-            getErrorMessage();
+            getErrorMessage(ws);
             break;
         }
     
     }
 
+    return msg_to_send;
+
 }
 
-// send the message one by one
-const sendMessage = (): void => {
+// send the message one by one with a slight delay
+const sendMessage = (msg_to_send: any[], ws: WebSocket): void => {
     for (let i = 0; i < msg_to_send.length; i++) {
         setTimeout(() => ws.send(JSON.stringify(msg_to_send[i])), 100 * (i + 1));
-    }    
+    }
+}
+
+// create a new client
+const mk_client = (cmd_line: any): void  => {
+
+    const ws = new WebSocket(`${cmd_line[2]}`);
+
+    // get the message from the terminal and send it at the time the client starts
+    ws.on('open', () => {
+        console.log('[Client] Connected.');
+    
+        const msg: any[] = getMessage(cmd_line[3], ws);
+    
+        if (msg.length !== 0) {
+            sendMessage(msg, ws);
+        }
+    
+        
+    });
+    
+    // print the received message to the terminal
+    ws.on('message', (data: any) => {
+    
+        let msg: any = JSON.parse(data);
+    
+        console.log(`Received a message from the server:\n ${msg}`);
+    
+    });
+    
+    // get a notification when the connection to the server ends
+    ws.on('close', () => {
+        console.log('Disconnected from WebSocket server');
+    });
+
 }
 
 
-
-ws.on('open', () => {
-    console.log('[Client] Connected.');
-
-    getMessage();
-
-    if (msg_to_send.length !== 0) {
-        sendMessage();
-    }
-
-    
-});
-
-ws.on('message', (data: any) => {
-    let msg: any = JSON.parse(data);
-    if (msg === "closeConnection") {
-        ws.close();
-    }
-    else {
-        if (typeof msg === 'string') {
-            const prs_data: string[] = msg.split(" ");
-            const first_symbol: string = prs_data[0];
-            if (first_symbol === "#" || first_symbol === "Hello,") {
-                console.log(`${msg}`);
-            }
-            else {
-                console.log(`Received a message from the server:\n ${msg}`);
-            }
-        }
-        else {
-            console.log(`Received a message from the server:\n ${msg}`);
-        }
-    }
-});
-
-ws.on('close', () => {
-    console.log('Disconnected from WebSocket server');
-});
+mk_client(process.argv);
