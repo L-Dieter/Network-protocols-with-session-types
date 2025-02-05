@@ -1,27 +1,38 @@
-export type Type = 
-      { type: "any" }
-    | { type: "number" }
-    | { type: "string" }
-    | { type: "boolean" }
-    | { type: "null" }
-    | { type: "union", components: Array<Type> }
-    | { type: "record", payload: Record<string, Type>, name?: string }
-    // array of fixed length where each element may have a different type
-    | { type: "tuple", payload: Array<Type> }
-    // array of variable length where each element has the same type
-    | { type: "array", payload: Type }
+/** concrete types for protocols */
+/** payload types modeled after JSON */
+export type Type =
+    { type: "any" } |
+    { type: "number" } |
+    { type: "string" } |
+    { type: "bool" } |
+    { type: "null" } |
+    { type: "union", components: Array<Type> } |
+    { type: "record", payload: Record<string, Type>, name ?: string } | 
+/** recursive type, back reference */
+    { type: "ref", name: string } |
+/** tuples are JSON arrays of fixed length where each element may have a different type */
+    { type: "tuple", payload: Array<Type> } |
+/** arrays are JSON arrays of variable length where each element has the same type */
+    { type: "array", payload: Type }
 
+/** protocol types */
+/** direction of transmission */
 export type Dir = "send" | "recv"
-
+/** label for protocol alternatives */
 export type Label = string
 
-export type Session = 
-        // single operation 
-      { kind: "single"; dir: Dir; payload: Type; program: Program; cont: Session }
-        // choice operator
-    | { kind: "choice"; dir: Dir; program: Program; alternatives: Record<Label, Session> }
-        // terminate protocol
-    | { kind: "end" }
+/** construction of protocols */
+export type Session =
+    /** single shot: transfer payload and continue as cont */
+  { kind: "single"; dir: Dir; payload: Type; cont: Session }
+    /** choice: transfer tag and continue as alternatives[tag] */
+| { kind: "choice"; dir: Dir; alternatives: Record<Label, Session> }
+    /** set marker name and continue as cont */
+// | { kind: "def"; name: string; cont: Session }
+    /** reference marker name; jump to its definition */
+// | { kind: "ref"; name: string }
+    /** terminate protocol */
+| { kind: "end" }
 
 export type Program = 
       { command: "send",
