@@ -132,6 +132,7 @@ const sendMessage = (msg_to_send: any[], ws: WebSocket): void => {
 // create a new client
 const mk_client = (cmd_line: any): void  => {
 
+    // insert the server url
     const ws = new WebSocket(`${cmd_line[2]}`);
 
     // get the message from the terminal and send it at the time the client starts
