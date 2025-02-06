@@ -28,9 +28,9 @@ export type Session =
     /** choice: transfer tag and continue as alternatives[tag] */
 | { kind: "choice"; dir: Dir; alternatives: Record<Label, Session> }
     /** set marker name and continue as cont */
-// | { kind: "def"; name: string; cont: Session }
+| { kind: "def"; name: string; cont: Session }
     /** reference marker name; jump to its definition */
-// | { kind: "ref"; name: string }
+| { kind: "ref"; name: string }
     /** terminate protocol */
 | { kind: "end" }
 
