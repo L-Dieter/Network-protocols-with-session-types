@@ -15,7 +15,10 @@ const updateSession = (ses: Session, p: Program, label?: string): Session => {
         else if (p.command === "send") {
             ses.dir = "send";
         }
-        if (p.command === "end") {
+        else if (p.command === "choose") {
+            ses = ses.cont;
+        }
+        else if (p.command === "end") {
             ses = ses.cont;
         }
     }
@@ -26,7 +29,10 @@ const updateSession = (ses: Session, p: Program, label?: string): Session => {
         else if (p.command === "send") {
             ses.dir = "send";
         }
-        if (p.command === "end" && label) {
+        else if (p.command === "choose" && label) {
+            ses = ses.alternatives[label];
+        }
+        else if (p.command === "end" && label) {
             ses = ses.alternatives[label];
         }
     }
@@ -41,7 +47,6 @@ const updateProgram = (p: Program, val?: { value?: any, label?: string }): Progr
     if (p.command !== "end" && p.command !== "choose") {
         if (p.command === "recv" && val?.value) {
             p.put_value(val.value);
-
         }
 
         p = p.cont;
@@ -70,10 +75,14 @@ const initSession = (kind: string): Session => {
 }
 
 // fill the Session with the given arguments
-const fillSession = (ses: Session, payload?: Type): void => {
+const fillSession = (ses: Session, payload?: Type, cont?: Session): void => {
     if (ses.kind !== "end" && payload) {
         if (payload && ses.kind === "single") {
             ses.payload = payload;
+        }
+
+        if (cont && ses.kind === "single") {
+            ses.cont = cont;
         }
     }
 }
@@ -97,25 +106,22 @@ const getProgram = (p: string, s: Session): Program => {
         }
         case "mk_arith": {
             prog = programs.mk_arith();
-            fillSession(s, { type: "string" });
+            fillSession(s, { type: "string" }, {
+                kind: "single",
+                dir: "recv",
+                payload: { type: "number" },
+                cont: { kind: "end" }
+            });
             break;
         }
         case "mk_jsonadd": {
             prog = programs.mk_jsonAdd();
-            fillSession(s, { type: "tuple", payload: [{ type: "number" }, { type: "number" }] });
+            fillSession(s, { type: "record", payload: { "arg1": { type: "number" }, "arg2": { type: "number" } } });
             break;
         }
         case "mk_stringneg": {
             prog = programs.mk_stringNeg();
-            fillSession(s, { type: "string" });
-            break;
-        }
-        case "mk_selecttest": {
-            prog = test_programs.mk_selectTest();
-            break;
-        }
-        case "mk_chooseselecttest": {
-            prog = test_programs.mk_chooseSelectTest();
+            fillSession(s, { type: "any" });
             break;
         }
         default: {
@@ -132,7 +138,13 @@ const checkSession = (s: Session, p: Program): Promise<void> => {
     var valid_session: boolean = false;
     
     if (s.kind !== "end") {
-        if (p.command) {
+        if (p.command === "recv" && s.dir !== "recv") {
+            valid_session = false;
+        }
+        else if (p.command === "send" && s.dir !== "send") {
+            valid_session = false;
+        }
+        else {
             valid_session = true;
         }
     }
@@ -295,8 +307,6 @@ const mk_server = async (cmd_line: any): Promise<void> => {
 
     }
 
-    session = updateSession(session, program);
-
     console.log(`Listening at ${port}...`);
 
 
@@ -315,6 +325,7 @@ const mk_server = async (cmd_line: any): Promise<void> => {
 
             let msg: any = JSON.parse(message);
 
+            // check payload if possible
             if (session.kind === "single") {
                 try {
                     await checkPayload(msg, session.payload);
@@ -326,7 +337,7 @@ const mk_server = async (cmd_line: any): Promise<void> => {
                 }
             }
 
-            
+            // use the message to continue with the program and session
             if (session.kind !== "end") {
                 if (session.dir !== "recv" && program.command !== "end") {
                     await continueProgram(program, wss);
@@ -428,8 +439,9 @@ const mk_server = async (cmd_line: any): Promise<void> => {
     
         // get the operation done
         if (session.kind !== "end" && l) {
+            const prev_p: Program = program;
             program = updateProgram(program, { label: l });
-            session = updateSession(session, program);
+            session = updateSession(session, prev_p, l);
         }
     
         // continue with the next step
