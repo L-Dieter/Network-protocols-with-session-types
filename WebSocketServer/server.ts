@@ -137,7 +137,7 @@ const checkSession = (s: Session, p: Program): Promise<void> => {
 
     var valid_session: boolean = false;
     
-    if (s.kind !== "end") {
+    if (session.kind === "single" || session.kind === "choice") {
         if (p.command === "recv" && s.dir !== "recv") {
             valid_session = false;
         }
@@ -338,7 +338,7 @@ const mk_server = async (cmd_line: any): Promise<void> => {
             }
 
             // use the message to continue with the program and session
-            if (session.kind !== "end") {
+            if (session.kind === "single" || session.kind === "choice") {
                 if (session.dir !== "recv" && program.command !== "end") {
                     await continueProgram(program, wss);
                 }
