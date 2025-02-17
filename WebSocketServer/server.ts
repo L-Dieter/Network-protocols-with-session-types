@@ -77,7 +77,7 @@ const initSession = (kind: string): Session => {
 // fill the Session with the given arguments
 const fillSession = (ses: Session, payload?: Type, cont?: Session): void => {
     if (ses.kind !== "end" && payload) {
-        if (payload && ses.kind === "single") {
+        if (ses.kind === "single") {
             ses.payload = payload;
         }
 
@@ -137,7 +137,7 @@ const checkSession = (s: Session, p: Program): Promise<void> => {
 
     var valid_session: boolean = false;
     
-    if (session.kind === "single" || session.kind === "choice") {
+    if (s.kind === "single" || s.kind === "choice") {
         if (p.command === "recv" && s.dir !== "recv") {
             valid_session = false;
         }
@@ -267,11 +267,11 @@ const checkPayload = async (input: any, type: Type, lap?: boolean): Promise<bool
 
 
 // start the server with a given program and session
-const mk_server = async (cmd_line: any): Promise<void> => {
+const mk_server = async (cmd_line: any[]): Promise<void> => {
 
 
     const port = 3000;
-    const wss = new WebSocketServer({port});
+    const wss = new WebSocketServer({port: port});
 
     const mk_program: string | Program = cmd_line[2];
     const mk_session: string | Session = cmd_line[3];
