@@ -2,310 +2,104 @@
 
 import { WebSocketServer } from "ws";
 import { Type, Dir, Label, Session, Program } from './protocol';
-import * as programs from './programs';
-
-
-// update the session
-const updateSession = (ses: Session, p: Program, label?: string): Session => {
-
-    if (ses.kind === "single") {
-        if (p.command === "recv") {
-            ses.dir = "recv";
-        }
-        else if (p.command === "send") {
-            ses.dir = "send";
-        }
-        else if (p.command === "choose") {
-            ses = ses.cont;
-        }
-        else if (p.command === "end") {
-            ses = ses.cont;
-        }
-    }
-    else if (ses.kind === "choice") {
-        if (p.command === "recv") {
-            ses.dir = "recv";
-        }
-        else if (p.command === "send") {
-            ses.dir = "send";
-        }
-        else if (p.command === "choose" && label) {
-            ses = ses.alternatives[label];
-        }
-        else if (p.command === "end" && label) {
-            ses = ses.alternatives[label];
-        }
-    }
-
-    return ses;
-
-}
-
-// update the program
-const updateProgram = (p: Program, val?: { value?: any, label?: string }): Program => {
-
-    if (p.command !== "end" && p.command !== "choose") {
-        if (p.command === "recv" && val?.value) {
-            p.put_value(val.value);
-        }
-
-        p = p.cont;
-
-    }
-    else if (p.command === "choose" && val?.label) {
-        p.do_match(val.label);
-        p = p.alt_cont[val.label];
-    }
-
-    return p;
-
-}
-
-// initialize a session based on the input string
-const initSession = (kind: string): Session => {
-    if (kind === "single") {
-
-        return { kind: kind, dir: "recv", payload: { type: "null" }, cont: { kind: "end"} };
-    }
-    else if (kind === "choice") {
-
-        return { kind: kind, dir: "recv", alternatives:  { end: { kind: "end" } } };
-    }
-    return { kind: "end" };
-}
-
-// fill the Session with the given arguments
-const fillSession = (ses: Session, payload?: Type, cont?: Session): void => {
-    if (ses.kind !== "end" && payload) {
-        if (ses.kind === "single") {
-            ses.payload = payload;
-        }
-
-        if (cont && ses.kind === "single") {
-            ses.cont = cont;
-        }
-    }
-}
-
-// get a program out of a list based on a input string
-const getProgram = (p: string, s: Session): Program => {
-
-    const lower_prog: string = p.toLowerCase();
-    let prog: Program;
-
-    switch (lower_prog) {
-        case "mk_adder": {
-            prog = programs.mk_adder();
-            fillSession(s, { type: "number" });
-            break;
-        }
-        case "mk_neg": {
-            prog = programs.mk_neg();
-            fillSession(s, { type: "number" });
-            break;
-        }
-        case "mk_arith": {
-            prog = programs.mk_arith();
-            fillSession(s, { type: "string" }, {
-                kind: "single",
-                dir: "recv",
-                payload: { type: "number" },
-                cont: { kind: "end" }
-            });
-            break;
-        }
-        case "mk_jsonadd": {
-            prog = programs.mk_jsonAdd();
-            fillSession(s, { type: "record", payload: { "arg1": { type: "number" }, "arg2": { type: "number" } } });
-            break;
-        }
-        case "mk_stringneg": {
-            prog = programs.mk_stringNeg();
-            fillSession(s, { type: "any" });
-            break;
-        }
-        default: {
-            return { command: "end" };
-        }
-    }
-
-    return prog;
-}
-
-// check if the session and the program fit together
-const checkSession = (s: Session, p: Program): Promise<void> => {
-
-    var valid_session: boolean = false;
-    
-    if (s.kind === "single" || s.kind === "choice") {
-        if (p.command === "recv" && s.dir !== "recv") {
-            valid_session = false;
-        }
-        else if (p.command === "send" && s.dir !== "send") {
-            valid_session = false;
-        }
-        else {
-            valid_session = true;
-        }
-    }
-
-    if (valid_session) {
-        return Promise.resolve();
-    }
-    else {
-        return Promise.reject('Session and program do not fit together');
-    }
-}
-
-// check the program and do another step if possible
-const continueProgram = (p: Program, wss: WebSocketServer, label?: Label): Promise<void> => {
-
-    switch (p.command) {
-        case "send": {
-            wss.emit('send');
-            break;
-        }
-        case "recv":{
-            break;
-        }
-        case "select":{
-            wss.emit('select');
-            break;
-        }
-        case "choose":{
-            if (label) {
-                wss.emit('choose', label);
-            }
-            break;
-        }
-        case "end":{
-            wss.emit('end');
-            break;
-        }
-        default: {
-            Promise.reject("Not a valid command");
-        }
-    }
-
-    return Promise.resolve();    
-}
-
-
-
-// check if the input and a payload type fit together
-const checkPayload = async (input: any, type: Type, lap?: boolean): Promise<boolean> => {
-
-    let valid_payload: boolean = false;
-    let union_lap: boolean = false;
-
-    if (lap) {
-        union_lap = lap;
-    }
-
-    switch (type.type) {
-        case "string": if (typeof input === "string") { valid_payload = true; } break;
-        case "number": if (typeof input === "number") { valid_payload = true; } break;
-        case "bool": if (typeof input === "boolean") { valid_payload = true; } break;
-        case "any": valid_payload = true; break;
-        case "null": if (input === null) { valid_payload = true; } break;
-        case "union": {
-            const union: Type[] = type.components;
-            for (let i = 0; i < union.length; i++) {
-                if (await checkPayload(input, union[i], true)) {
-                    valid_payload = true;
-                    union_lap = false;
-                    break;
-                }
-            }
-            union_lap = false;
-            break;
-        }
-        case "record": {
-            if (typeof input === "object" && !Array.isArray(input)) {
-                const type_keys: string[] = Object.keys(type.payload);
-                const input_keys: string[] = Object.keys(input);
-                for (let i = 0; i < type_keys.length; i++) {
-                    valid_payload = await checkPayload(input[input_keys[i]], type.payload[type_keys[i]]);
-                }
-            }
-            break;
-        }
-        case "tuple": {
-            if (Array.isArray(input)) {
-                for (let i = 0; i < type.payload.length; i++) {
-                    valid_payload = await checkPayload(input[i], type.payload[i]);
-                }
-
-            }
-            break;
-        }
-        case "array": {
-            if (Array.isArray(input)) {
-                for (let i = 0; i < input.length; i++) {
-                    valid_payload = await checkPayload(input[i], type.payload);
-                }
-            }
-            break;
-        }
-        case "ref": if (typeof input === "string") { valid_payload = true; } break;
-        default: valid_payload = false;
-
-    }
-
-
-    if (valid_payload) {
-        return Promise.resolve(true);
-    }
-    else if (union_lap) {
-        return Promise.resolve(false);
-    }
-    else {
-        return Promise.reject('Invalid payload');
-    }
-
-}
-
+import { Marker } from "./src/interfaces/marker";
+import { getMarker } from "./src/reference/getMarker";
+import { setMarker } from "./src/reference/setMarker";
+import { checkSession } from "./src/check/checkSession";
+import { checkPayload } from "./src/check/checkPayload";
+import { choose } from "./src/program/choose";
+import { receive } from "./src/program/receive";
+import { updateProgram } from "./src/update/updateProgram";
+import { updateSession } from "./src/update/updateSession";
+import { continueProgram } from "./src/program/continueProgram";
+import { commandLine } from "./input";
 
 // start the server with a given program and session
-const mk_server = async (cmd_line: any[]): Promise<void> => {
+function mk_server (cmd_line: any[] = commandLine, port: number = commandLine[3]): void {
 
-
-    const port = 3000;
     const wss = new WebSocketServer({port: port});
 
-    const mk_program: string | Program = cmd_line[2];
-    const mk_session: string | Session = cmd_line[3];
+    // let program: Program = JSON.parse(cmd_line[2]);
+    // let session: Session = JSON.parse(cmd_line[3]);
+    let program: Program = cmd_line[2];
+    let session: Session = cmd_line[3];
 
-    let program: Program;
-    let session: Session;
     let client: any;
 
-    if (typeof mk_session === "string") {
-        session = initSession(mk_session);
+    // a set of marker to store the references
+    let markerDb: Marker[] = [];
+
+    // session and program for the loop
+    let sessionToCheck: Session = session;
+    let programToCheck: Program = program;
+
+    // track the session to go back if needed
+    let markPosition: [Session, Program, Label][] = [];
+    let failedLabels: Label[] = [];
+
+
+    // loop over the programm and session to check if they fit together
+    while (programToCheck.command !== "end" || sessionToCheck.kind !== "end") {
+
+        if (!checkSession(sessionToCheck, programToCheck)) {
+            // jump to the last valid position
+            if (markPosition.length !== 0) {
+                sessionToCheck = markPosition[markPosition.length - 1][0];
+                programToCheck = markPosition[markPosition.length - 1][1];
+                failedLabels.push(markPosition[markPosition.length - 1][2]);
+                markPosition.pop();
+            }
+            else {
+                wss.close();
+                break;
+            }
+        }
+
+        if (sessionToCheck.kind === "single") {
+            sessionToCheck = updateSession(sessionToCheck);
+            programToCheck = updateProgram(programToCheck);
+        }
+        else if (sessionToCheck.kind === "choice") {
+
+            if (programToCheck.command === "choose") {
+
+                let label: Label = "";
+
+                for (const key in sessionToCheck.alternatives) {
+                    if (key in programToCheck.alt_cont && !(failedLabels.includes(key))) {
+                        label = key;
+                        markPosition.push([sessionToCheck, programToCheck, label]);
+                        break;
+                    }
+                }
+
+                if (!label) {
+                    wss.close();
+                    break;
+                }
+
+                sessionToCheck = updateSession(sessionToCheck, label);
+                programToCheck = updateProgram(programToCheck, label);
+            }
+            else if (programToCheck.command === "select") {
+                sessionToCheck = updateSession(sessionToCheck, programToCheck.get_value());
+                programToCheck = updateProgram(programToCheck);
+            }
+        }
+        else if (session.kind === "ref") {
+            const marker: Marker = getMarker(session.name, markerDb);
+            programToCheck = marker.program;
+            sessionToCheck = marker.session;
+        }
+        else if (session.kind === "def") {
+            markerDb = setMarker(session.name, markerDb, program, session.cont);
+            session = session.cont;
+            break;
+        }
+
     }
-    else {
-        session = mk_session;
-    }
 
-    if (typeof mk_program === "string") {
-        program = getProgram(mk_program, session);
-    }
-    else {
-        program = mk_program;
-    }
-
-    try {
-
-        await checkSession(session, program);
-
-    }
-    catch (error) {
-
-        console.error(error);
-
-        wss.close();
-
-    }
+    markerDb = [];
 
     console.log(`Listening at ${port}...`);
 
@@ -314,44 +108,152 @@ const mk_server = async (cmd_line: any[]): Promise<void> => {
 
         client = ws;
 
-        // if no message is needed move on with the program
-        if (program.command !== "recv" && program.command !== "choose") {
-            await continueProgram(program, wss);
+        // do some steps that does not require an input or terminate the session
+        while (program.command === "send" || program.command === "select") {
+            switch (session.kind) {
+                case "single": {
+                    continueProgram(program, session, wss, client);
+                    session = updateSession(session);
+                    program = updateProgram(program);
+                    break;
+                }
+                case "choice": {
+                    if (program.command === "select") {
+                        continueProgram(program, session, wss, client);
+                        session = updateSession(session, program.get_value());
+                        program = updateProgram(program);
+                    }
+                    else {
+                        // send request
+                        continueProgram(program, session, wss, client);
+                    }
+                    break;
+                }
+                case "def": {
+                    markerDb = setMarker(session.name, markerDb, program, session.cont);
+                    session = session.cont;
+                    break;
+                }
+                case "ref": {
+                    const marker: Marker = getMarker(session.name, markerDb);
+                    program = marker.program;
+                    session = marker.session;
+                    break;
+                }
+                case "end": {
+                    continueProgram(program, session, wss, client);
+                    break;
+                }
+            }
         }
 
-    
+        continueProgram(program, session, wss, client);
+        
+
         // incoming message of any type
-        ws.on('message', async (message: any) => {
+        ws.on('message', (message: any) => {
 
             let msg: any = JSON.parse(message);
 
+            let check: boolean = true;
+
             // check payload if possible
             if (session.kind === "single") {
-                try {
-                    await checkPayload(msg, session.payload);
+                if (!checkPayload(msg, session.payload)) {
+                    check = false;
                 }
-                catch (error) {
-                    console.error(error);
-                    ws.close();
-                    wss.close();
+            }
+            // msg has to be a string if it is a "choice" session
+            else if (session.kind === "choice") {
+                if (!checkPayload(msg, { type: "string" })) {
+                    check = false;
+                }
+                else {
+                    // the msg has to be the same as an existing label in session.alternatives
+                    for (const key of Object.keys(session.alternatives)) {
+                        if (msg === key) {
+                            check = true;
+                            break;
+                        }
+                        else {
+                            check = false;
+                        }
+                    }
+                }
+
+            }
+            // check if the given name exists to reference it
+            else if (session.kind === "ref") {
+                if (!checkPayload(msg, { type: "ref", name: session.name }, markerDb)) {
+                    check = false;
+                }
+            }
+            // check if the given name exists for another definition
+            else if (session.kind === "def") {
+                if (!checkPayload(msg, { type: "def", name: session.name, payload: { type: "any" } }, markerDb)) { // TODO: not sure what the payload should be
+                    check = false;
                 }
             }
 
-            // use the message to continue with the program and session
-            if (session.kind === "single" || session.kind === "choice") {
-                if (session.dir !== "recv" && program.command !== "end") {
-                    await continueProgram(program, wss);
-                }
-                else if (program.command === "choose") {
-                    wss.emit('choose', msg);
+            // if the payload check is successful continue, otherwise close the connection
+            if (check) {
+                // use the message to continue with the program and session
+                if (program.command === "choose") {
+                    choose(session, program, msg);
+                    session = updateSession(session, msg);
+                    program = updateProgram(program, msg);
                 }
                 else if (program.command === "recv") {
-                    wss.emit('recv', msg);
-                }
-                else if (session.kind === "choice") {
-                    wss.emit('recv', msg);
+                    receive(session, program, msg);
+                    session = updateSession(session);
+                    program = updateProgram(program);
                 }
             }
+            else {
+                ws.close();
+                wss.close();
+            }
+
+            // get into the program and move on with the steps it can do
+            while (program.command === "select" || program.command === "send") {
+                switch (session.kind) {
+                    case "single": {
+                        continueProgram(program, session, wss, client);
+                        session = updateSession(session);
+                        program = updateProgram(program);
+                        break;
+                    }
+                    case "choice": {
+                        if (program.command === "select") {
+                            continueProgram(program, session, wss, client);
+                            session = updateSession(session, program.get_value());
+                            program = updateProgram(program);
+                        }
+                        else {
+                            // send request
+                            continueProgram(program, session, wss, client);
+                        }
+                        break;
+                    }
+                    case "def": {
+                        markerDb = setMarker(session.name, markerDb, program, session.cont);
+                        session = session.cont;
+                        break;
+                    }
+                    case "ref": {
+                        const marker: Marker = getMarker(session.name, markerDb);
+                        program = marker.program;
+                        session = marker.session;
+                        break;
+                    }
+                    case "end": {
+                        continueProgram(program, session, wss, client);
+                        break;
+                    }
+                }
+            }
+
+            continueProgram(program, session, wss, client);
 
         });
 
@@ -364,127 +266,10 @@ const mk_server = async (cmd_line: any[]): Promise<void> => {
     });
 
     
-    // "recv" operation of the program and session
-    wss.on('recv', async (msg: any) => {
-    
-        // use the message for the program if it needs to receive one, otherwise update a "choice" session
-        if (session.kind !== "end") {
-            if (program.command === "recv") {
-                program.put_value(msg);
-                program = updateProgram(program, { value: msg });
-                session = updateSession(session, program);
-            }
-            else if (session.kind === "choice") {
-                session = updateSession(session, program, msg);
-            }
-        }
-    
-        // continue with the next step
-        if (session.kind !== "end") {
-            await continueProgram(program, wss);
-        }
-        else {
-            wss.emit('end');
-        }
-    });
-
-    // "send" operation of the program and session
-    wss.on('send', async () => {
-    
-        // get the operation done
-        if (session.kind !== "end") {
-            if (program.command === "send") {
-                client.send(JSON.stringify(program.get_value()));
-            }
-            program = updateProgram(program);
-            session = updateSession(session, program);
-        }
-    
-        // continue with the next step
-        if (session.kind !== "end") {
-            await continueProgram(program, wss);
-        }
-        else {
-            wss.emit('end');
-        }
-    });
-    
-    // "select" operation of the program
-    wss.on('select', async () => {
-    
-        // use the selected value for the program or as a label to continue with the next session
-        if (session.kind !== "end") {
-            if (program.command === "select" && program.cont.command === "choose") {
-                const select: string = program.get_value();
-                program = updateProgram(program);
-                await continueProgram(program, wss, select);
-            }
-            else if (session.kind === "choice") {
-                if (program.command === "select" && program.cont.command === "end") {
-                    session = updateSession(session, program, program.get_value());
-                }
-            }
-            else {
-                program = updateProgram(program);
-                await continueProgram(program, wss);
-            }
-        }
-        else {
-            wss.emit('end');
-        }
-    });
-    
-    // "choose" operation of the program
-    wss.on('choose', async (l: Label) => {
-    
-        // get the operation done
-        if (session.kind !== "end" && l) {
-            const prev_p: Program = program;
-            program = updateProgram(program, { label: l });
-            session = updateSession(session, prev_p, l);
-        }
-    
-        // continue with the next step
-        if (session.kind !== "end") {
-            await continueProgram(program, wss);
-        }
-        else {
-            wss.emit('end');
-        }
-    
-    });
-    
-    // "end" operation of the program and session
-    wss.on('end', async () => {
-    
-        // try to update the session (if the program finished)
-        if (session.kind !== "end") {
-            session = updateSession(session, program);
-        }
-    
-        // continue with the next step
-        if (session.kind === "single") {
-            await continueProgram(program, wss);
-        }
-        else if (session.kind === "choice") {
-            if (program.command === "end") {
-                // wait for a label to continue with the session
-            }
-            else {
-                await continueProgram(program, wss);
-            }
-        }
-        else {
-            // close the connection
-            client.close();
-            wss.close();
-        }
-    });
-    
     wss.on('close', () => {
         console.log("Connection closed");
     });
 
 }
 
-mk_server(process.argv);
+mk_server();
