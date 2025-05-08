@@ -2,8 +2,4 @@
 
 Usage:
 
-Allowed operation(s):
-
-   .. \<serverurl\> add \<number\> \<number\>
-   
-   .. \<serverurl\> neg \<number\>
+Change 'input.ts' to use the desired session, program and port on the server.
