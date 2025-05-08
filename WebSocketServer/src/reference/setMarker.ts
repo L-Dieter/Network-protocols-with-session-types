@@ -1,0 +1,34 @@
+import { Program, Session } from "../../protocol";
+import { Marker } from "../interfaces/marker";
+
+// set marker name
+// export function setMarker (name: string, marker: marker, prog: Program, ses: Session): marker {
+//     if (!(marker.hasOwnProperty(name))) {
+//         const new_marker: marker = {
+//             name: name,
+//             program: prog,
+//             session: ses
+//         };
+//         return Object.defineProperty(marker, name, new_marker);
+//     }
+//     else {
+//         return marker;
+//     }
+// }
+
+export function setMarker (name: string, marker: Marker[], prog: Program, ses: Session): Marker[] {
+
+    const targetMarker: Marker | undefined = marker.find((m: Marker) => m.name === name);
+
+    if (!targetMarker) {
+        const new_marker: Marker = {
+            name: name,
+            program: prog,
+            session: ses
+        };
+        marker.push(new_marker);
+    }
+    
+    return marker;
+
+}
