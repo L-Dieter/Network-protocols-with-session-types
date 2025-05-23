@@ -1,17 +1,15 @@
 import { WebSocketServer } from "ws";
-import { Label, Program, Session } from "../../protocol";
-import { send } from "./send";
-import { end } from "./end";
-import { select } from "./select";
+import { Program, Session } from "../../protocol";
+import * as commands from "./commands";
 import { request } from "../misc/request";
 
 // check the program and do another step if possible
-export function continueProgram (program: Program, session: Session, server?: WebSocketServer, client?: WebSocket, label?: Label): void {
+export function continueProgram (program: Program, session: Session, server?: WebSocketServer, client?: WebSocket): void {
 
     switch (program.command) {
         case "send": {
             if (client) {
-                send(session, program, client);
+                commands.send(session, program, client);
             }
             break;
         }
@@ -22,7 +20,7 @@ export function continueProgram (program: Program, session: Session, server?: We
             break;
         }
         case "select": {
-            select(session, program);
+            commands.select(session, program);
             break;
         }
         case "choose": {
@@ -33,7 +31,7 @@ export function continueProgram (program: Program, session: Session, server?: We
         }
         case "end": {
             if (server && client) {
-                end(session, program, server, client);
+                commands.end(session, program, server, client);
             }
             break;
         }
