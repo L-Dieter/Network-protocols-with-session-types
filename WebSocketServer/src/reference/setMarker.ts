@@ -1,7 +1,7 @@
 import { Program, Session } from "../../protocol";
 import { Marker } from "../interfaces/marker";
 
-// set marker name
+// set a new marker
 export function setMarker (name: string, marker: Marker[], prog: Program, ses: Session): Marker[] {
 
     const targetMarker: Marker | undefined = marker.find((m: Marker) => m.name === name);
