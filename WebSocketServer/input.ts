@@ -1,3 +1,5 @@
+// usage: change the default values with a json
+
 import { Program, Session } from "./protocol";
 
 const defaultSession: Session = { kind: 'end' };
