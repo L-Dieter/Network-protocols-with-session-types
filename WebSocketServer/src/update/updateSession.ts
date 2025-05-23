@@ -10,7 +10,6 @@ export function updateSession (session: Session, label?: string, marker?: Marker
     else if (session.kind === "choice" && label) {
         session = session.alternatives[label];
     }
-    // TODO: "ref" und "def"
     else if (session.kind === "def") {
         session = session.cont;
     }
