@@ -5,7 +5,7 @@ export function checkSession (session: Session, program: Program): boolean {
 
     let valid_session: boolean = false;
 
-    // TODO: skip def and ref for now
+    // skip def and ref
     if (session.kind === 'ref' || session.kind === 'def') { return true; }
 
     switch(program.command) {
@@ -61,8 +61,6 @@ export function checkSession (session: Session, program: Program): boolean {
             break;
         }
         case "end": {
-            // TODO: for now only check for 'end'
-            // if (session.kind === "end" || session.kind === "ref" || session.kind === "def") {
             if (session.kind === "end") {
                 valid_session = true;
             }
