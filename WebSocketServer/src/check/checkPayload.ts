@@ -78,15 +78,24 @@ export function checkPayload (input: any, type: Type, markers?: Marker[]): boole
         case "def": {
             if (!markers) { break; }
 
-            valid_payload = true;
+            let marker_exists = false;
 
             // check if name exists (fail if it does)
             for (const marker of markers) {
                 if (type.name === marker.name) {
-                    valid_payload = false;
+                    marker_exists = true;
                     break;
                 }
             }
+
+            // if no reference exists yet, check the payload from 'def'
+            if (!marker_exists) {
+                valid_payload = checkPayload(input, type.payload);
+            }
+            else {
+                valid_payload = false;
+            }
+
             break;
         }
         default: valid_payload = false;
