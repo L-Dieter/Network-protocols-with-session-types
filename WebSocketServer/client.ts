@@ -2,15 +2,16 @@
 
 import WebSocket from "ws";
 import { Type } from './protocol';
+import * as readline from 'readline';
 
 // Set up a readline interface to be able to answer a request from the server
-const readline = require('readline').createInterface({
+const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 })
 
 // check if the message still needs to be stringified
-const checkInput = (message: any): boolean => {
+const checkInput = (message: string): boolean => {
     try {
         JSON.parse(message);
     } catch (error) {
@@ -21,7 +22,7 @@ const checkInput = (message: any): boolean => {
 
 
 // create a new client
-function mk_client (cmd_line: any) {
+function mk_client (cmd_line: string[]): void {
     
     // open a connection with a server
     const ws = new WebSocket(`${cmd_line[2]}`);
@@ -52,12 +53,12 @@ function mk_client (cmd_line: any) {
     // close the connection
     ws.on('close', () => {
         console.log('Disconnected from WebSocket server');
-        readline.close();
+        rl.close();
     });
 
     // open a readline if needed
     ws.on('send', () => {
-        readline.question(`Input of type '${(msg.type.type).toUpperCase()}' required: `, (msg: any) => {
+        rl.question(`Input of type '${(msg.type.type).toUpperCase()}' required: `, (msg: string) => {
 
             if (checkInput(msg)) {
                 ws.send(msg);

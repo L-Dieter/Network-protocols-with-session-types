@@ -13,3 +13,32 @@ const program: Program = defaultProgram;
 const port: number = defaultPort;
 
 export const commandLine: any[] = [session, program, port];
+
+export const defaultConfig = {
+    session: defaultSession,
+    program: defaultProgram,
+    port: defaultPort
+};
+export type Config = {
+    session: Session,
+    program: Program,
+    port: number
+};
+export function mkConfig(
+    session: Session = defaultSession,
+    program: Program = defaultProgram,
+    port: number = defaultPort
+): Config {
+    return { session, program, port };
+}
+export function getSession(config: Config): Session {
+    return config.session;
+}
+export function getProgram(config: Config): Program {
+    return config.program;
+}
+export function getPort(config: Config): number {
+    return config.port;
+}
+
+
