@@ -1,10 +1,10 @@
 import { Type } from "../../protocol";
-import { Marker } from "../interfaces/marker";
 
 // check if the input and a payload type fit together
-export function checkPayload (input: any, type: Type, markers?: Marker[]): boolean {
+export function checkPayload (input: any, type: Type, markers: { "name": string, "type": Type}[] = []): boolean {
 
     let valid_payload: boolean = false;
+    let markerDB: { "name": string, "type": Type}[] = markers;
 
     switch (type.type) {
         case "string": if (typeof input === "string") { valid_payload = true; } break;
@@ -15,7 +15,7 @@ export function checkPayload (input: any, type: Type, markers?: Marker[]): boole
         case "union": {
             const union: Type[] = type.components;
             for (let i = 0; i < union.length; i++) {
-                if (checkPayload(input, union[i])) {
+                if (checkPayload(input, union[i]), markerDB) {
                     valid_payload = true;
                     break;
                 }
@@ -24,26 +24,29 @@ export function checkPayload (input: any, type: Type, markers?: Marker[]): boole
         }
         case "record": {
             if (typeof input === "object" && !Array.isArray(input)) {
-                const values_types: Type[] = Object.values(type.payload);
-                const input_keys: string[] = Object.keys(input);
-                const union: Type = { type: "union", components: values_types};
-                for (let i = 0; i < input_keys.length; i++) {
-                    if (!checkPayload(input[input_keys[i]], union)) {
+
+                Object.keys(type.payload).forEach(key => {
+
+                    if (input[key] === undefined) {
                         valid_payload = false;
-                        break;
+                        return;
+                    }
+
+                    if (!checkPayload(input[key], type.payload[key], markerDB)) {
+                        valid_payload = false;
+                        return;
                     }
                     else {
                         valid_payload = true;
                     }
-
-                }
+                });
             }
             break;
         }
         case "tuple": {
             if (Array.isArray(input)) {
                 for (let i = 0; i < type.payload.length; i++) {
-                    valid_payload = checkPayload(input[i], type.payload[i]);
+                    valid_payload = checkPayload(input[i], type.payload[i], markerDB);
                     if (!valid_payload) {
                         break;
                     }
@@ -55,7 +58,7 @@ export function checkPayload (input: any, type: Type, markers?: Marker[]): boole
         case "array": {
             if (Array.isArray(input)) {
                 for (let i = 0; i < input.length; i++) {
-                    valid_payload = checkPayload(input[i], type.payload);
+                    valid_payload = checkPayload(input[i], type.payload, markerDB);
                     if (!valid_payload) {
                         break;
                     }
@@ -64,37 +67,29 @@ export function checkPayload (input: any, type: Type, markers?: Marker[]): boole
             break;
         }
         case "ref": {
-            if (!markers) { break; }
 
             // check if name exists (fail if it does not)
-            for (const marker of markers) {
+            for (const marker of markerDB) {
                 if (type.name === marker.name) {
-                    valid_payload = true;
+                    valid_payload = checkPayload(input, marker.type);
                     break;
                 }
             }
             break;
         }
         case "def": {
-            if (!markers) { break; }
 
-            let marker_exists = false;
-
-            // check if name exists (fail if it does)
-            for (const marker of markers) {
-                if (type.name === marker.name) {
-                    marker_exists = true;
-                    break;
+            // check if the name exists already
+            for (let marker of markerDB) {
+                if (marker.name === type.name) {
+                    return false;
                 }
             }
 
-            // if no reference exists yet, check the payload from 'def'
-            if (!marker_exists) {
-                valid_payload = checkPayload(input, type.payload);
-            }
-            else {
-                valid_payload = false;
-            }
+            // safe the "name -> type" of the def
+            markerDB.push({ "name": type.name, "type": type.payload});
+
+            valid_payload = checkPayload(input, type.payload, markerDB);
 
             break;
         }
