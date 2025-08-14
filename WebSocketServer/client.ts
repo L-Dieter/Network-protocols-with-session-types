@@ -3,6 +3,7 @@
 import WebSocket from "ws";
 import { Type } from './protocol';
 import * as readline from 'readline';
+import { getHelpText } from "./src/misc/helpText";
 
 // Set up a readline interface to be able to answer a request from the server
 const rl = readline.createInterface({
@@ -10,22 +11,23 @@ const rl = readline.createInterface({
     output: process.stdout
 })
 
-// check if the message still needs to be stringified
-const checkInput = (message: string): boolean => {
-    try {
-        JSON.parse(message);
-    } catch (error) {
-        return false;
-    }
-    return true;
-}
-
-
 // create a new client
 function mk_client (cmd_line: string[]): void {
-    
+
+    // check if the initial amount of arguments is correct
+    if (cmd_line.length === 2) {
+        console.log(getHelpText());
+        rl.close();
+        return;
+    }
+    else if (cmd_line.length !== 3) {
+        console.error("Invalid parameter. Check your input!");
+        rl.close();
+        return;
+    }
+
     // open a connection with a server
-    const ws = new WebSocket(`${cmd_line[2]}`);
+    const ws: WebSocket = new WebSocket(`${cmd_line[2]}`);
 
     // each incoming message has to be of that type
     let msg: { name: string, type: Type, content?: any};
@@ -58,16 +60,25 @@ function mk_client (cmd_line: string[]): void {
 
     // open a readline if needed
     ws.on('send', () => {
-        rl.question(`Input of type '${(msg.type.type).toUpperCase()}' required: `, (msg: string) => {
 
-            if (checkInput(msg)) {
-                ws.send(msg);
-            }
-            else {
-                ws.send(JSON.stringify(msg));
-            }
+        // info message to know what input is required
+        let info: string = "";
+
+        // input needs to be a label
+        if (msg.content) {
+            info = `Label of type '${(msg.content)}' required: `;
+        }
+        // input needs to be of the given type
+        else {
+            info = `Input of type '${(msg.type.type).toUpperCase()}' required: `;
+        }
+
+        rl.question(info, (msg: string) => {
+
+            ws.send(msg);
 
         });
+
     });
 
 }
