@@ -6,12 +6,6 @@ const defaultSession: Session = { kind: 'end' };
 const defaultProgram: Program = { command: 'end' };
 const defaultPort: number = 3000;
 
-const session: Session = defaultSession;
-
-const program: Program = defaultProgram;
-
-const port: number = defaultPort;
-
 export const commandLine: any[] = [session, program, port];
 
 export const defaultConfig = {
@@ -40,5 +34,6 @@ export function getProgram(config: Config): Program {
 export function getPort(config: Config): number {
     return config.port;
 }
+
 
 
