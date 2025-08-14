@@ -8,7 +8,14 @@ export function request (session: Session, client: WebSocket): void {
         client.send(buildMsg("request", session.payload));
     }
     else if (session.kind === "choice") {
-        client.send(buildMsg("request", { type: "string" }));
+        let keys: string = Object.keys(session.alternatives)[0];
+        Object.keys(session.alternatives).forEach((key, i) => {
+            if (i > 0) {
+                keys = keys + ", " + key;
+            }
+        });
+
+        client.send(buildMsg("request", { type: "string" }, keys));
     }
 
 }
