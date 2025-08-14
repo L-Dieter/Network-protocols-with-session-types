@@ -11,7 +11,7 @@ With the default settings the server will close the connection after checking th
 \<*PATH*> server.ts
 
 Opens a new connection to the server with the given session, program and port.<br/>
-The server will be accessible after a short delay, if the session and programs matches.<br/>
+The server will be accessible after a short delay, if the session and program matches.<br/>
 If a client connects to the server it will start processing the session and sends a message or request to the client if needed.
 
 **2.) How to start the client:**<br/>
