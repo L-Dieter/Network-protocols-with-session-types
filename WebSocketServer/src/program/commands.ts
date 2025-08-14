@@ -31,11 +31,14 @@ export function receive (session: Session, program: Program, value: any): void {
 }
 
 // "select" operation of the program
-export function select (session: Session, program: Program): void {
+export function select (session: Session, program: Program, client: WebSocket): void {
 
     if (session.kind !== 'choice' || program.command !== 'select') { return; }
 
-    program.get_value();
+    const label: Label = program.get_value();
+    const msg: string = buildMsg('message', { type: "string" }, `<Label: ${label}>`);
+
+    client.send(msg);
 
 }
 
