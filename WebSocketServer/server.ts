@@ -1,122 +1,34 @@
 // Start a WebSocket server
 
 import { WebSocketServer } from "ws";
-import { Label, Session, Program } from './protocol';
+import { Session, Program } from './protocol';
 import { Marker } from "./src/interfaces/marker";
-import { getMarker } from "./src/reference/getMarker";
-import { setMarker } from "./src/reference/setMarker";
 import { checkSession } from "./src/check/checkSession";
 import { checkPayload } from "./src/check/checkPayload";
 import * as commands from "./src/program/commands";
 import { updateProgram } from "./src/update/updateProgram";
 import { updateSession } from "./src/update/updateSession";
-import { continueProgram } from "./src/program/continueProgram";
-import { commandLine } from "./input";
+import { doSteps } from "./src/program/continueProgram";
+import * as input from "./input";
 
 
 // start the server with a given program and session
-function mk_server (cmd_line: any[] = commandLine, port: number = commandLine[2]): void {
+function mk_server (cmd_line: input.Config): void {
 
-    const wss = new WebSocketServer({port: port});
-
-    let program: Program = cmd_line[0];
-    let session: Session = cmd_line[1];
+    let program: Program = input.getProgram(cmd_line);
+    let session: Session = input.getSession(cmd_line);
+    const port: number = input.getPort(cmd_line);
 
     let client: any;
 
     // a set of marker to store the references
     let markerDb: Marker[] = [];
 
-    // session and program for to check before the connection
-    let sessionToCheck: Session = session;
-    let programToCheck: Program = program;
-
-    // track the session to go back if needed
-    let markPosition: [Session, Program, Label][] = [];
-    let failedLabels: Label[] = [];
-
-    // mark a reference to prevent an infinite loop
-    let referenceLoop = false;
-
     // loop over the programm and session to check if they fit together
-    while (programToCheck.command !== "end" || sessionToCheck.kind !== "end") {
+    if (!checkSession(session, program, markerDb)) { return; }
 
-        if (!checkSession(sessionToCheck, programToCheck)) {
-            // jump to the last valid position
-            if (markPosition.length !== 0) {
-                sessionToCheck = markPosition[markPosition.length - 1][0];
-                programToCheck = markPosition[markPosition.length - 1][1];
-                failedLabels.push(markPosition[markPosition.length - 1][2]);
-                markPosition.pop();
-            }
-            else {
-                wss.close();
-                break;
-            }
-        }
-        else if (referenceLoop) {
-            // jump to the last valid position
-            if (markPosition.length !== 0) {
-                sessionToCheck = markPosition[markPosition.length - 1][0];
-                programToCheck = markPosition[markPosition.length - 1][1];
-                failedLabels.push(markPosition[markPosition.length - 1][2]);
-                markPosition.pop();
-            }
-            referenceLoop = false;
-        }
-
-        if (sessionToCheck.kind === "single") {
-            sessionToCheck = updateSession(sessionToCheck);
-            programToCheck = updateProgram(programToCheck);
-        }
-        else if (sessionToCheck.kind === "choice") {
-
-            let label: Label = "";
-
-            if (programToCheck.command === "choose") {
-
-                for (const key in sessionToCheck.alternatives) {
-                    if (key in programToCheck.alt_cont && !(failedLabels.includes(key))) {
-                        label = key;
-                        markPosition.push([sessionToCheck, programToCheck, label]);
-                        break;
-                    }
-                }
-
-                if (!label) {
-                    wss.close();
-                    break;
-                }
-
-                sessionToCheck = updateSession(sessionToCheck, label);
-                programToCheck = updateProgram(programToCheck, label);
-
-            }
-            else if (programToCheck.command === "select") {
-                for (const key in sessionToCheck.alternatives) {
-                    label = key;
-                    markPosition.push([sessionToCheck, programToCheck, label]);
-                    break;
-                }
-                sessionToCheck = updateSession(sessionToCheck, label);
-                programToCheck = updateProgram(programToCheck);
-            }
-        }
-        else if (sessionToCheck.kind === "ref") {
-            referenceLoop = true;
-            const marker: Marker = getMarker(sessionToCheck.name, markerDb);
-            programToCheck = marker.program;
-            sessionToCheck = marker.session;
-        }
-        else if (sessionToCheck.kind === "def") {
-            markerDb = setMarker(sessionToCheck.name, markerDb, programToCheck, sessionToCheck.cont);
-            sessionToCheck = sessionToCheck.cont;
-        }
-
-    }
-
-    markerDb = [];
-
+    // start the server
+    const wss = new WebSocketServer({port: port});
     console.log(`Listening at ${port}...`);
 
 
@@ -124,49 +36,11 @@ function mk_server (cmd_line: any[] = commandLine, port: number = commandLine[2]
 
         client = ws;
 
-        // do some steps that does not require an input or terminate the session
-        // cases: single send, choice send, def, ref
-        while (program.command === "send" || program.command === "select"  || session.kind === "def" || session.kind === "ref") {
-            switch (session.kind) {
-                case "single": {
-                    continueProgram(program, session, wss, client);
-                    session = updateSession(session);
-                    program = updateProgram(program);
-                    break;
-                }
-                case "choice": {
-                    if (program.command === "select") {
-                        continueProgram(program, session, wss, client);
-                        session = updateSession(session, program.get_value());
-                        program = updateProgram(program);
-                    }
-                    else {
-                        // send request
-                        continueProgram(program, session, wss, client);
-                    }
-                    break;
-                }
-                case "def": {
-                    markerDb = setMarker(session.name, markerDb, program, session.cont);
-                    session = session.cont;
-                    break;
-                }
-                case "ref": {
-                    const marker: Marker = getMarker(session.name, markerDb);
-                    program = marker.program;
-                    session = marker.session;
-                    break;
-                }
-                case "end": {
-                    continueProgram(program, session, wss, client);
-                    break;
-                }
-            }
-        }
-
-        // do the next step that either requires an input or terminates the session
-        // cases: single recv, choice recv, end
-        continueProgram(program, session, wss, client);
+        // do the steps and update the session, program and markerDb
+        const state: [Session, Program, Marker[]] = doSteps(session, program, wss, client, markerDb);
+        session = state[0];
+        program = state[1];
+        markerDb = state[2];
         
 
         // incoming message of any type
@@ -222,52 +96,15 @@ function mk_server (cmd_line: any[] = commandLine, port: number = commandLine[2]
             }
 
             // get into the program and move on with the steps it can do
-            // cases: single send, choice send, def, ref
-            while (program.command === "select" || program.command === "send" || session.kind === "def" || session.kind === "ref") {
-                switch (session.kind) {
-                    case "single": {
-                        continueProgram(program, session, wss, client);
-                        session = updateSession(session);
-                        program = updateProgram(program);
-                        break;
-                    }
-                    case "choice": {
-                        if (program.command === "select") {
-                            continueProgram(program, session, wss, client);
-                            session = updateSession(session, program.get_value());
-                            program = updateProgram(program);
-                        }
-                        else {
-                            // send request
-                            continueProgram(program, session, wss, client);
-                        }
-                        break;
-                    }
-                    case "def": {
-                        markerDb = setMarker(session.name, markerDb, program, session.cont);
-                        session = session.cont;
-                        break;
-                    }
-                    case "ref": {
-                        const marker: Marker = getMarker(session.name, markerDb);
-                        program = marker.program;
-                        session = marker.session;
-                        break;
-                    }
-                    case "end": {
-                        continueProgram(program, session, wss, client);
-                        break;
-                    }
-                }
-            }
-
-            // do the next step that either requires an input or terminates the session
-            // cases: single recv, choice recv, end
-            continueProgram(program, session, wss, client);
+            // and update the session, program and markerDb
+            const state: [Session, Program, Marker[]] = doSteps(session, program, wss, client, markerDb);
+            session = state[0];
+            program = state[1];
+            markerDb = state[2];
 
         });
 
-            
+
         ws.on('close', () => {
             // console.log('Client disconnected');
         });
@@ -275,12 +112,28 @@ function mk_server (cmd_line: any[] = commandLine, port: number = commandLine[2]
     
     });
 
-    
+
     wss.on('close', () => {
         console.log("Connection closed");
     });
 
 }
 
+// get the session, program and port out of a file if the name is given
+async function getConfig (file?: string, name?: string): Promise<void> {
 
-mk_server();
+    if (file && name) {
+        const file_name: string = file;
+        const string_name: string = name;
+
+        const mod: input.Config = (await import(file_name))[string_name] as input.Config;
+    
+        mk_server(mod);
+    }
+    else {
+        mk_server(input.mkConfig());
+    }
+
+}
+
+getConfig(process.argv[2], process.argv[3]);
