@@ -32,8 +32,11 @@ As soon as an input is required, the client receives a request from the server w
 
 **3.) How to use the tests:**<br/>
 
-\<*PATH*> npx tsx server.ts ./testsuite/test1.ts test1 **OR** \<*PATH*> npm run test1<br/>
-\<*PATH*> npx tsx server.ts ./testsuite/test2.ts test2 **OR** \<*PATH*> npm run test2<br/>
+Option 1: \<*PATH*> npx tsx server.ts ./testsuite/test1.ts test1<br/>
+Option 2: \<*PATH*> npm run test1<br/>
+
+Option 1: \<*PATH*> npx tsx server.ts ./testsuite/test2.ts test2<br/>
+Option 2: \<*PATH*> npm run test2<br/>
 
 This will open a connection to the server with a session, program and port which is given by the respective file.<br/>
 
