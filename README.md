@@ -42,4 +42,4 @@ This will open a connection to the server with a session, program and port which
 
 \<*PATH*> npx tsx client.ts ws://localhost:3000
 
-Afterwards connect the client to the server and the session will be processed.
+*(Option 1 only)*: Afterwards connect the client to the server and the session will be processed.
