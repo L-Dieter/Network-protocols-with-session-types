@@ -91,6 +91,7 @@ function mk_server (cmd_line: input.Config): void {
                 }
             }
             else {
+                console.log("Wrong input. Session terminates...");
                 ws.close();
                 wss.close();
             }
@@ -137,3 +138,4 @@ async function getConfig (file?: string, name?: string): Promise<void> {
 }
 
 getConfig(process.argv[2], process.argv[3]);
+
