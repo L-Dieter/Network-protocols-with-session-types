@@ -10,8 +10,10 @@
     "client-delayed": "npm-run-all sleep client", 
     "test1-start": "tsx server.ts ./test/testsuite/test1.ts test1",
     "test2-start": "tsx server.ts ./test/testsuite/test2.ts test2",
+    "demo1-start": "tsx server.ts ./src/demo/demo1.ts demo1",
     "test1": "npm-run-all -p -r test1-start client-delayed",
-    "test2": "npm-run-all -p -r test2-start client-delayed"
+    "test2": "npm-run-all -p -r test2-start client-delayed",
+    "demo1": "npm-run-all -p -r demo1-start client-delayed"
   },
   "author": "",
   "license": "ISC",
